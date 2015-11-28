@@ -1,0 +1,153 @@
+from .settings import Base, Production
+
+class Tietopyynto(Base, Production):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql_psycopg2',
+            'NAME': 'tietopyynto',
+            'USER': 'tietopyynto',
+            'PASSWORD': 'EQ3gFZp6',
+            'HOST': '',
+            'PORT': '',
+            }
+        }
+    CONN_MAX_AGE = None
+
+    SECRET_KEY = ("\x9b\xe3\xb9\x1cS\xee\xc8\xd3\x9f\x81\xfd9\x1d\x15X"
+                  "\xf5\x99\xe36\x9c\x84\t\xe6\xea\xa3'\xddt7\xec\x96O")
+
+    SITE_NAME = values.Value('Froide')
+    SITE_EMAIL = values.Value('tietopyynto@tietopyynto.fi')
+    SITE_URL = values.Value('http://www.tietopyynto.fi')
+
+    SITE_ID = values.IntegerValue(1)
+
+    BROKER_URL = values.Value('amqp://tietopyynto:tietopyynto@localhost:5672/tietopyynto')
+
+#    CELERY_RESULT_BACKEND = values.Value('amqp://tietopyynto:tietopyynto@localhost:5672/tietopyynto')
+
+    CELERY_EMAIL_TASK_CONFIG = {
+        'max_retries': None,
+        'ignore_result': False,
+        'acks_late': True,
+        'store_errors_even_if_ignored': True
+    }
+
+    ADMINS = (
+         ('Leo Honkanen', 'leo.o.honkanen@gmail.com'),
+    )
+
+    MANAGERS = ADMINS
+
+    INTERNAL_IPS = values.TupleValue(('127.0.0.1',))
+
+    # XXX Social Auth is not set up on this repo yet
+
+    SOCIAL_AUTH_STRATEGY = 'social.strategies.django_strategy.DjangoStrategy'
+    SOCIAL_AUTH_STORAGE = 'social.apps.django_app.default.models.DjangoStorage'
+
+    CUSTOM_AUTH_USER_MODEL_DB = []
+
+    GEOIP_PATH = None
+
+    SOCIAL_AUTH_GITHUB_KEY = '92af0dc8697f140dc548'
+    SOCIAL_AUTH_GITHUB_SECRET = '17c2f79970a4f722ef46a7398812987ad8e3f26a'
+    SOCIAL_AUTH_GITHUB_SCOPE = ['email']
+
+    SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = '343221621424-vja05krudv99d2b2osgioei8c0ovn4cv.apps.googleusercontent.com'
+    SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = 'VjxfCK5ZceMJMlgfuy8JIfEP'
+    SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = ['email']
+
+    SOCIAL_AUTH_PIPELINE = (
+    'social.pipeline.social_auth.social_details',
+    'social.pipeline.social_auth.social_uid',
+    'social.pipeline.social_auth.auth_allowed',
+    'social.pipeline.social_auth.social_user',
+    'social.pipeline.user.get_username',
+    'social.pipeline.social_auth.associate_by_email',
+    'social.pipeline.user.create_user',
+    'social.pipeline.social_auth.associate_user',
+    'social.pipeline.social_auth.load_extra_data',
+    'social.pipeline.user.user_details'
+    )
+
+    SOCIAL_AUTH_PROTECTED_USER_FIELDS = ['email',]
+
+    SOCIAL_AUTH_FACEBOOK_KEY     = '1511558542417882'
+    SOCIAL_AUTH_FACEBOOK_SECRET  = 'dd353864b3139430b6cede88f19bef75'
+    SOCIAL_AUTH_FACEBOOK_SCOPE = ['email']
+
+    SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/tili/'
+    SOCIAL_AUTH_NEW_USER_REDIRECT_URL = '/tili/'
+    SOCIAL_AUTH_NEW_ASSOCIATION_REDIRECT_URL = '/tili/'
+    SOCIAL_AUTH_DISCONNECT_REDIRECT_URL = '/tili/'
+
+    # -- end social auth things --
+
+    TIME_ZONE = values.Value('Europe/Helsinki')
+    USE_TZ = values.BooleanValue(True)
+    LANGUAGE_CODE = values.Value('fi-fi')
+    LANGUAGES = (
+        ('fi-fi', gettext('Suomi')),
+        ('sv-fi', gettext('Svenska')),
+        ('en', gettext('English')),
+    )
+
+
+    CELERY_ROUTES = {
+        'froide.foirequest.tasks.fetch_mail': {"queue": "emailfetch"},
+    }
+
+    FROIDE_CONFIG = dict(
+        create_new_publicbody=True,
+        publicbody_empty=True,
+        user_can_hide_web=True,
+        public_body_officials_public=True,
+        public_body_officials_email_public=True,
+        request_public_after_due_days=14,
+        payment_possible=True,
+        currency="Euro",
+        default_law=1,
+        search_engine_query="http://www.google.fi/search?as_q=%(query)s&as_epq=&as_oq=&as_eq=&hl=fi&lr=&cr=&as_ft=i&as_filetype=&as_qdr=all&as_occt=any&as_dt=i&as_sitesearch=%(domain)s&as_rights=&safe=images",
+        greetings=[rec(u"Dear (?:Mr\.?|Ms\.? .*?)")],
+        closings=[rec(u"Sincerely yours,?")],
+        public_body_boosts={},
+        dryrun=False,
+        dryrun_domain="tietopyynto.fi",
+        allow_pseudonym=False,
+        doc_conversion_binary="/usr/bin/libreoffice",
+    )
+
+
+    EMAIL_SUBJECT_PREFIX = values.Value('[Tietopyynto] ')
+    SERVER_EMAIL = values.Value('tietopyynto@tietopyynto.fi')
+    DEFAULT_FROM_EMAIL = values.Value('tietopyynto@tietopyynto.fi')
+
+    # Official Notification Mail goes through
+    # the normal Django SMTP Backend
+    EMAIL_HOST = values.Value("smtp.saimanet.net")
+    EMAIL_PORT = values.IntegerValue(25)
+    EMAIL_HOST_USER = values.Value("")
+    EMAIL_HOST_PASSWORD = values.Value("")
+    EMAIL_USE_TLS = values.BooleanValue(False)
+
+    FOI_EMAIL_DOMAIN = "tietopyynto.fi"
+    FOI_EMAIL_PORT_IMAP = values.IntegerValue(993)
+    FOI_EMAIL_HOST_IMAP = values.Value("tietopyynto.fi")
+    FOI_EMAIL_ACCOUNT_NAME = values.Value("postiljooni")
+    FOI_EMAIL_ACCOUNT_PASSWORD = values.Value("qtH4E5Up")
+    FOI_EMAIL_USE_SSL = values.BooleanValue(True)
+    FOI_EMAIL_USE_TLS = values.BooleanValue(True)
+
+    # SMTP settings for sending FoI mail
+    FOI_EMAIL_HOST_USER = values.Value("")
+    FOI_EMAIL_HOST_FROM = values.Value("tietopyynto@tietopyynto.fi")
+    FOI_EMAIL_HOST_PASSWORD = values.Value("")
+    FOI_EMAIL_HOST = values.Value("smtp.saimanet.net")
+    FOI_EMAIL_PORT = values.IntegerValue(25)
+
+    FOI_EMAIL_FIXED_FROM_ADDRESS = values.BooleanValue(True)
+
+    ALLOWED_HOSTS = values.TupleValue((
+        'www.tietopyynto.fi',
+    ))
