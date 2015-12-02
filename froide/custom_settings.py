@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from configurations import values
 from .settings import Base, Production, Dev, rec
 
