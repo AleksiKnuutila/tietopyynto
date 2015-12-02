@@ -3,7 +3,7 @@ from .settings import Base, Production, Dev, rec
 
 gettext = lambda s: s
 
-class TietopyyntoBase(Base):
+class TietopyyntoBase(object):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql_psycopg2',
