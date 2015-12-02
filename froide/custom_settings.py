@@ -154,6 +154,8 @@ class TietopyyntoBase(object):
 
     ALLOWED_HOSTS = values.TupleValue((
         'www.tietopyynto.fi',
+        'tietopyynto.fi',
+        'beta.tietopyynto.fi',
     ))
 
 class TietopyyntoProd(TietopyyntoBase, Production):
