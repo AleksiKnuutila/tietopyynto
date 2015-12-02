@@ -1,5 +1,5 @@
 from configurations import values
-from .settings import Base, Production
+from .settings import Base, Production, rec
 
 gettext = lambda s: s
 
