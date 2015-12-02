@@ -19,7 +19,7 @@ class TietopyyntoBase(object):
     SECRET_KEY = ('1d20oV9ZjfSLmQ7DE3W44c43/0hmr21LaV'
                   '70yVi3ZJAoRilr2w1XaPQuLm3w5Xm6PBM=')
 
-    SITE_NAME = values.Value('Froide')
+    SITE_NAME = values.Value(u'Tietopyyntö')
     SITE_EMAIL = values.Value('tietopyynto@tietopyynto.fi')
     SITE_URL = values.Value('http://www.tietopyynto.fi')
 
