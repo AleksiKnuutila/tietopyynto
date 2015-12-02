@@ -1,3 +1,4 @@
+from configurations import values
 from .settings import Base, Production
 
 class Tietopyynto(Base, Production):
