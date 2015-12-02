@@ -121,7 +121,8 @@ class TietopyyntoBase(object):
         doc_conversion_binary="/usr/bin/libreoffice",
     )
 
-
+    # EMAIL_BACKEND = 'djcelery_email.backends.CeleryEmailBackend'
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
     EMAIL_SUBJECT_PREFIX = values.Value('[Tietopyynto] ')
     SERVER_EMAIL = values.Value('tietopyynto@tietopyynto.fi')
     DEFAULT_FROM_EMAIL = values.Value('tietopyynto@tietopyynto.fi')
