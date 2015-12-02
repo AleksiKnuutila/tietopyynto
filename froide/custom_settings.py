@@ -1,9 +1,9 @@
 from configurations import values
-from .settings import Base, Production, rec
+from .settings import Base, Production, Dev, rec
 
 gettext = lambda s: s
 
-class Tietopyynto(Production):
+class TietopyyntoBase(Base):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql_psycopg2',
@@ -154,3 +154,9 @@ class Tietopyynto(Production):
     ALLOWED_HOSTS = values.TupleValue((
         'www.tietopyynto.fi',
     ))
+
+class TietopyyntoProd(Production, TietopyyntoBase):
+    pass
+
+class TietopyyntoDev(Dev, TietopyyntoBase):
+    pass
