@@ -155,8 +155,8 @@ class TietopyyntoBase(Base):
         'www.tietopyynto.fi',
     ))
 
-class TietopyyntoProd(Production, TietopyyntoBase):
+class TietopyyntoProd(TietopyyntoBase, Production):
     pass
 
-class TietopyyntoDev(Dev, TietopyyntoBase):
+class TietopyyntoDev(TietopyyntoBase, Dev):
     pass
