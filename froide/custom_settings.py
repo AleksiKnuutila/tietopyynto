@@ -16,8 +16,8 @@ class Tietopyynto(Production, Base):
         }
     CONN_MAX_AGE = None
 
-    SECRET_KEY = ("\x9b\xe3\xb9\x1cS\xee\xc8\xd3\x9f\x81\xfd9\x1d\x15X"
-                  "\xf5\x99\xe36\x9c\x84\t\xe6\xea\xa3'\xddt7\xec\x96O")
+    SECRET_KEY = ('1d20oV9ZjfSLmQ7DE3W44c43/0hmr21LaV'
+                  '70yVi3ZJAoRilr2w1XaPQuLm3w5Xm6PBM=')
 
     SITE_NAME = values.Value('Froide')
     SITE_EMAIL = values.Value('tietopyynto@tietopyynto.fi')
