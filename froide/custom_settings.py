@@ -1,6 +1,8 @@
 from configurations import values
 from .settings import Base, Production
 
+gettext = lambda s: s
+
 class Tietopyynto(Base, Production):
     DATABASES = {
         'default': {
