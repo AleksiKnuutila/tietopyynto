@@ -111,7 +111,7 @@
         </div>
       </fieldset>
     {% endif %}
-    {% if not request_form.is_bound and not request_form.initial.subject %}
+    {% if not request_form.is_bound and not request_form.initial.subject and not is_expert %}
       <fieldset id="check-foi">
       <legend>
         {% blocktrans %}Choose the type of request{% endblocktrans %}
@@ -278,7 +278,7 @@
               <div id="letter_start" class="text"{% if request_form.full_text.value %} style="display:none"{% endif %}>{{ request_form.default_law.letter_start_form }}</div>
 
               <div{% if request_form.body.errors %} class="has-error"{% endif %}>{{ request_form.body }}</div>
-              <div id="letter_complete_end"{% if request_form.full_text.value %} style="display:none"{% endif %}><div id="letter_short_end" class="text"><small class="pull-right"><a class="toggle hideparent text-muted" href="#letter_end">{% trans "[... Show complete request text]" %}</a></small>
+              <div id="letter_complete_end"{% if request_form.full_text.value %} style="display:none"{% endif %}><div id="letter_short_end" class="text"><a class="toggle hideparent text-muted pull-right" href="#letter_end">{% trans "[... Show complete request text]" %}</a>
                 <span id="letter-greeting">{% blocktrans %}Kind Regards,{% endblocktrans %}</span>
               </div>
 
@@ -450,7 +450,7 @@
 
       <fieldset id="review-and-submit">
         <div class="modal fade" id="step-review" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
-          <div class="modal-dialog">
+          <div class="modal-dialog" id="review-modal-dialog">
             <div class="modal-content">
               <div class="modal-header">
                 <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
