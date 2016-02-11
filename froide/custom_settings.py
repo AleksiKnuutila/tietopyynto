@@ -23,7 +23,7 @@ class TietopyyntoBase(object):
 
     SITE_NAME = values.Value(u'Tietopyyntö')
     SITE_EMAIL = values.Value('tietopyynto@tietopyynto.fi')
-    SITE_URL = values.Value('http://www.tietopyynto.fi')
+    SITE_URL = values.Value('http://tietopyynto.fi')
 
     SITE_ID = values.IntegerValue(1)
 
