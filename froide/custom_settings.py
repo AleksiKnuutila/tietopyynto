@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import os.path
+
 from configurations import values
 from .settings import Base, Production, Dev, rec
 
