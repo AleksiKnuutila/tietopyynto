@@ -189,7 +189,7 @@ class TietopyyntoProd(TietopyyntoBase, Production):
             'console': {
                 'level': 'DEBUG',
                 'class': 'logging.StreamHandler',
-            }
+            },
             'celery_task_logger': {
                 'level': 'DEBUG',
                 'filters': None,
@@ -215,7 +215,7 @@ class TietopyyntoProd(TietopyyntoBase, Production):
                 'level': 'ERROR',
                 'handlers': ['console'],
                 'propagate': False,
-            }
+            },
             'celery.task': {
                 'handlers': ['celery_task_logger'],
                 'level': 'DEBUG',
