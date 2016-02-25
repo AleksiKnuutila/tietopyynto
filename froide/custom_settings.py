@@ -102,6 +102,7 @@ class TietopyyntoBase(object):
     CELERY_ROUTES = {
         'froide.foirequest.tasks.fetch_mail': {"queue": "emailfetch"},
     }
+    CELERYD_HIJACK_ROOT_LOGGER = False
 
     FROIDE_CONFIG = dict(
         create_new_publicbody=True,
@@ -161,7 +162,68 @@ class TietopyyntoBase(object):
     ))
 
 class TietopyyntoProd(TietopyyntoBase, Production):
-    pass
+    PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': True,
+        'root': {
+            'level': 'WARNING',
+            'handlers': [],
+        },
+        'filters': {
+            'require_debug_false': {
+                '()': 'django.utils.log.RequireDebugFalse'
+            }
+        },
+        'formatters': {
+            'verbose': {
+                'format': '%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s'
+            },
+        },
+        'handlers': {
+            'mail_admins': {
+                'level': 'ERROR',
+                'filters': ['require_debug_false'],
+                'class': 'django.utils.log.AdminEmailHandler'
+            },
+            'console': {
+                'level': 'DEBUG',
+                'class': 'logging.StreamHandler',
+            }
+            'celery_task_logger': {
+                'level': 'DEBUG',
+                'filters': None,
+                'class': 'logging.handlers.RotatingFileHandler',
+                'filename': os.path.join(PROJECT_ROOT, 'logs', 'celery_tasks.log'),
+                'maxBytes': 1024*1024*5,
+                'backupCount': 2,
+                'formatter': 'standard'
+            },
+        },
+        'loggers': {
+            'froide': {
+                'handlers': ['console'],
+                'propagate': True,
+                'level': 'DEBUG',
+            },
+            'django.request': {
+                'handlers': ['mail_admins'],
+                'level': 'ERROR',
+                'propagate': True,
+            },
+            'django.db.backends': {
+                'level': 'ERROR',
+                'handlers': ['console'],
+                'propagate': False,
+            }
+            'celery.task': {
+                'handlers': ['celery_task_logger'],
+                'level': 'DEBUG',
+                'propagate': True,
+            },
+        }
+    }
+
 
 class TietopyyntoDev(TietopyyntoBase, Dev):
     pass
