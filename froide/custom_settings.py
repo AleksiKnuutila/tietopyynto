@@ -181,6 +181,11 @@ class TietopyyntoProd(TietopyyntoBase, Production):
             'verbose': {
                 'format': '%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s'
             },
+
+            'standard': {
+                'format': '%(asctime)s %(levelname)s [%(name)s: %(lineno)s] -- %(message)s',
+                'datefmt': '%m-%d-%Y %H:%M:%S'
+            },
         },
         'handlers': {
             'mail_admins': {
