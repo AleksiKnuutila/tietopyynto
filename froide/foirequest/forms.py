@@ -505,5 +505,41 @@ class OnlineAttachmentForm(forms.Form):
     )
 
 
+class OnlineAttachmentForm(forms.Form):
+    sender_name = forms.CharField(
+        label=_("Your Name"),
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": _("Your Name")
+            }),
+        required=True
+    )
+    sender_email = forms.EmailField(
+        label=_("Contact Email"),
+        required=True,
+        max_length=230,
+        widget=forms.TextInput(
+            attrs={
+                "class": "form-control",
+                "placeholder": _("Email address")
+            })
+    )
+    text = forms.CharField(
+        label=_("Remarks"),
+        widget=forms.Textarea(
+            attrs={
+                "placeholder": _("Information, remarks about the documents"),
+                "class": "form-control"
+            }),
+        required=False
+    )
+    documents = MultiFileField(
+        label=_("Requested documents"),
+        help_text=_("You can add multiple documents at the same time."),
+        min_num=1
+    )
+
+
 class TagFoiRequestForm(TagObjectForm):
     resource_name = 'request'
