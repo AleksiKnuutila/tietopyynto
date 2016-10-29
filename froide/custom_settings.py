@@ -165,6 +165,7 @@ class TietopyyntoBase(object):
 
 class TietopyyntoProd(TietopyyntoBase, Production):
     PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
+    FACEBOOK_PAGE = "https://www.facebook.com/groups/tietopyynto"
     LOGGING = {
         'version': 1,
         'disable_existing_loggers': True,
