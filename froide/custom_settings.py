@@ -13,7 +13,7 @@ class TietopyyntoBase(object):
             'ENGINE': 'django.db.backends.postgresql_psycopg2',
             'NAME': 'tietopyynto',
             'USER': 'tietopyynto',
-            'PASSWORD': 'EQ3gFZp6',
+            'PASSWORD': '',
             'HOST': '',
             'PORT': '',
             }
@@ -29,7 +29,7 @@ class TietopyyntoBase(object):
 
     SITE_ID = values.IntegerValue(1)
 
-    BROKER_URL = values.Value('amqp://tietopyynto:tietopyynto@localhost:5672/tietopyynto')
+    BROKER_URL = values.Value('amqp://tietopyynto:Sua49aZIDCm9@localhost:5672/tietopyynto')
 
 #    CELERY_RESULT_BACKEND = values.Value('amqp://tietopyynto:tietopyynto@localhost:5672/tietopyynto')
 
@@ -41,7 +41,7 @@ class TietopyyntoBase(object):
     }
 
     ADMINS = (
-         ('Leo Honkanen', 'leo.o.honkanen@gmail.com'),
+         ('Leo Honkanen', 'leo@ponie.fi'),
     )
 
     MANAGERS = ADMINS
@@ -134,7 +134,7 @@ class TietopyyntoBase(object):
 
     # Official Notification Mail goes through
     # the normal Django SMTP Backend
-    EMAIL_HOST = values.Value("smtp.saimanet.net")
+    EMAIL_HOST = values.Value("mail.kapsi.fi")
     EMAIL_PORT = values.IntegerValue(25)
     EMAIL_HOST_USER = values.Value("")
     EMAIL_HOST_PASSWORD = values.Value("")
@@ -142,9 +142,9 @@ class TietopyyntoBase(object):
 
     FOI_EMAIL_DOMAIN = "tietopyynto.fi"
     FOI_EMAIL_PORT_IMAP = values.IntegerValue(993)
-    FOI_EMAIL_HOST_IMAP = values.Value("tietopyynto.fi")
-    FOI_EMAIL_ACCOUNT_NAME = values.Value("postiljooni")
-    FOI_EMAIL_ACCOUNT_PASSWORD = values.Value("qtH4E5Up")
+    FOI_EMAIL_HOST_IMAP = values.Value("localhost")
+    FOI_EMAIL_ACCOUNT_NAME = values.Value("tietopyynto-mail")
+    FOI_EMAIL_ACCOUNT_PASSWORD = values.Value("PgtFsqqYXFW0")
     FOI_EMAIL_USE_SSL = values.BooleanValue(True)
     FOI_EMAIL_USE_TLS = values.BooleanValue(True)
 
@@ -152,7 +152,7 @@ class TietopyyntoBase(object):
     FOI_EMAIL_HOST_USER = values.Value("")
     FOI_EMAIL_HOST_FROM = values.Value("tietopyynto@tietopyynto.fi")
     FOI_EMAIL_HOST_PASSWORD = values.Value("")
-    FOI_EMAIL_HOST = values.Value("smtp.saimanet.net")
+    FOI_EMAIL_HOST = values.Value("mail.kapsi.fi")
     FOI_EMAIL_PORT = values.IntegerValue(25)
 
     FOI_EMAIL_FIXED_FROM_ADDRESS = values.BooleanValue(True)
