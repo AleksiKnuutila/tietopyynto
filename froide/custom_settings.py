@@ -141,12 +141,12 @@ class TietopyyntoBase(object):
     EMAIL_USE_TLS = values.BooleanValue(False)
 
     FOI_EMAIL_DOMAIN = "tietopyynto.fi"
-    FOI_EMAIL_PORT_IMAP = values.IntegerValue(993)
+    FOI_EMAIL_PORT_IMAP = values.IntegerValue(143)
     FOI_EMAIL_HOST_IMAP = values.Value("localhost")
     FOI_EMAIL_ACCOUNT_NAME = values.Value("tietopyynto-mail")
     FOI_EMAIL_ACCOUNT_PASSWORD = values.Value("PgtFsqqYXFW0")
-    FOI_EMAIL_USE_SSL = values.BooleanValue(True)
-    FOI_EMAIL_USE_TLS = values.BooleanValue(True)
+    FOI_EMAIL_USE_SSL = values.BooleanValue(False)
+    FOI_EMAIL_USE_TLS = values.BooleanValue(False)
 
     # SMTP settings for sending FoI mail
     FOI_EMAIL_HOST_USER = values.Value("")
