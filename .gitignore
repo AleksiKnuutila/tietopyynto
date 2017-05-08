@@ -20,4 +20,5 @@ dist/
 froide/tests/froide_test_whoosh_db
 froide/media/
 celeryd.pid
-*~
+tietopyynto-files.tar.gz
+froide/logs

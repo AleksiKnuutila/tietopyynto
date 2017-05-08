@@ -207,16 +207,29 @@ class TietopyyntoProd(TietopyyntoBase, Production):
                 'backupCount': 2,
                 'formatter': 'standard'
             },
+	    'logfile': {
+		    'level':'DEBUG',
+		    'class':'logging.handlers.RotatingFileHandler',
+		    'filename': os.path.join(PROJECT_ROOT, 'logs', 'froide.log'),
+		    'maxBytes': 50000,
+		    'backupCount': 2,
+		    'formatter': 'verbose',
+	    },
         },
         'loggers': {
             'froide': {
-                'handlers': ['console'],
+                'handlers': ['console','logfile'],
                 'propagate': True,
                 'level': 'DEBUG',
             },
             'django.request': {
                 'handlers': ['mail_admins'],
                 'level': 'ERROR',
+                'propagate': True,
+            },
+            'django': {
+                'handlers': ['logfile'],
+                'level': 'DEBUG',
                 'propagate': True,
             },
             'django.db.backends': {

@@ -43,6 +43,7 @@ class Base(Configuration):
         'tastypie',
         'storages',
         'compressor',
+	'django_extensions',
 
         # local
         'froide.foirequest',
@@ -275,7 +276,7 @@ class Base(Configuration):
             'console': {
                 'level': 'DEBUG',
                 'class': 'logging.StreamHandler',
-            }
+	    },
         },
         'loggers': {
             'froide': {

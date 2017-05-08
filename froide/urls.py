@@ -164,7 +164,6 @@ urlpatterns += [
     url(r'^(?P<slug>[\w-]+)/', include('froide.publicbody.jurisdiction_urls'))
 ]
 
-
 def handler500(request):
     """
     500 error handler which includes ``request`` in the context.
