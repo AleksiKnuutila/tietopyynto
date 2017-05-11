@@ -163,6 +163,22 @@ class TietopyyntoBase(object):
         'beta.tietopyynto.fi',
     ))
 
+#    FROIDE_THEME = 'froide_theme'
+#
+#    @property
+#    def TEMPLATE_LOADERS(self):
+#        old = super(Dev, self).TEMPLATE_LOADERS
+#        if self.FROIDE_THEME is not None:
+#            return (['froide.helper.theme_utils.ThemeLoader'] + old)
+#        return old
+#
+#    @property
+#    def INSTALLED_APPS(self):
+#        installed = super(Dev, self).INSTALLED_APPS
+#        if self.FROIDE_THEME is not None:
+#            return installed.default + [self.FROIDE_THEME]
+#        return installed.default
+
 class TietopyyntoProd(TietopyyntoBase, Production):
     PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
     FACEBOOK_PAGE = "https://www.facebook.com/groups/tietopyynto"

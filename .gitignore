@@ -22,3 +22,4 @@ froide/media/
 celeryd.pid
 tietopyynto-files.tar.gz
 froide/logs
+celerybeat-schedule

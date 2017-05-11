@@ -164,6 +164,13 @@ urlpatterns += [
     url(r'^(?P<slug>[\w-]+)/', include('froide.publicbody.jurisdiction_urls'))
 ]
 
+# local urls, for OKF
+# These really need to be moved to a "theme" app so that we don't override urls.py
+urlpatterns += [
+    url(r'apua/oikeutesi/', flatpage, {'url': '/apua/oikeutesi/'}, name='help-rights'),
+]
+
+
 def handler500(request):
     """
     500 error handler which includes ``request`` in the context.

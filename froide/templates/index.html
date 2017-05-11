@@ -103,7 +103,12 @@
     <h3>{% blocktrans %}What is Freedom of Information?{% endblocktrans %}</h3>
     <p>{% blocktrans %}Every citizen has the right under the Freedom of Information Laws to ask for and receive access to information from Public Bodies concerning public affairs.{% endblocktrans %}
     <br/>
+{% comment %}
      <a class="target-new" href="https://en.wikipedia.org/wiki/Freedom_of_information_laws_by_country">{% blocktrans %}Read more about the Freedom of Information!{% endblocktrans %}</a>
+{% endcomment %}
+  <a href="{% url 'help-rights' %}">
+     {% blocktrans %}Read more about the Freedom of Information!{% endblocktrans %}
+ </a>
     </p>
     {% endblock %}
   </div>

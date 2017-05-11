@@ -5049,8 +5049,7 @@ msgid ""
 "and receive access to information from Public Bodies concerning public "
 "affairs."
 msgstr ""
-"Julkisuuslainsäädännön nojalla kaikilla kansalaisilla on oikeus saada tieto "
-"viranomaisten julkisista asiakirjoista."
+"Julkisuusperiaatteen nojalla jokaisella on oikeus saada tieto viranomaisten julkisista asiakirjoista."
 
 #: froide/templates/index.html:106
 msgid "Read more about the Freedom of Information!"
@@ -5066,9 +5065,8 @@ msgid ""
 "others don't have to ask for the same information and replies can be "
 "scrutinized by the public."
 msgstr ""
-"Tämä sivusto julkaisee tietopyynnöt ja niiden vastaukset. Näin samaa tietoa "
-"ei tarvitse pyytää useaan kertaan. Kansalaiset voivat vaivatta seurata "
-"vastauksia."
+"Tietopyyntö.fi-sivusto tukee tietopyyntöjen tekemistä ja mahdollistaa niiden tulosten ja valikoidun sisällön julkaisemisen. Näin samaa tietoa ei tarvitse pyytää useaan kertaan ja jokainen voi vaivatta seurata vastauksia."
+""
 
 #: froide/templates/index.html:116
 msgid "Read more about the concept!"
