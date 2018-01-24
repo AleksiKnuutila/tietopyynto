@@ -44,6 +44,7 @@ class Base(Configuration):
         'storages',
         'compressor',
 	'django_extensions',
+	'robots',
 
         # local
         'froide.foirequest',

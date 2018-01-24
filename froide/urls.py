@@ -2,7 +2,7 @@ from django.conf.urls import include, url
 from django.core.urlresolvers import reverse
 from django.conf.urls.static import static
 from django.conf import settings
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, HttpResponse
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.contrib.flatpages.views import flatpage
 from django.contrib.sitemaps import Sitemap
@@ -22,6 +22,8 @@ from froide.foirequest.views import (index, search, dashboard, auth,
                                      FoiRequestSitemap, shortlink,
                                      document_upload)
 
+
+from django.views.generic import TemplateView
 
 v1_api = Api(api_name='v1')
 v1_api.register(PublicBodyResource())
@@ -168,6 +170,15 @@ urlpatterns += [
 # These really need to be moved to a "theme" app so that we don't override urls.py
 urlpatterns += [
     url(r'apua/oikeutesi/', flatpage, {'url': '/apua/oikeutesi/'}, name='help-rights'),
+]
+
+urlpatterns += [
+    url(r'^googlef74fe3c7734be36c.html$', lambda r: HttpResponse("google-site-verification: googlef74fe3c7734be36c.html"))
+]
+
+urlpatterns += [
+    url(r'^robots\.txt$', TemplateView.as_view(template_name='robots.txt')),
+    url(r'^robotss\.txt$', TemplateView.as_view(template_name='froide/robots.txt'))
 ]
 
 
