@@ -1,5 +1,3 @@
-import datetime
-
 from django.utils import timezone
 from django.contrib.sessions.models import Session
 
@@ -10,6 +8,7 @@ def merge_accounts(old_user, new_user):
     from froide.foirequestfollower.models import FoiRequestFollower
     from froide.frontpage.models import FeaturedRequest
     from froide.publicbody.models import PublicBody
+    from froide.team.models import TeamMembership
 
     mapping = [
         (FoiRequest, 'user', None),
@@ -20,6 +19,7 @@ def merge_accounts(old_user, new_user):
         (FeaturedRequest, 'user', None),
         (PublicBody, '_created_by', None),
         (PublicBody, '_updated_by', None),
+        (TeamMembership, 'user', ('user', 'team')),
     ]
 
     for klass, attr, dupe in mapping:
@@ -37,7 +37,7 @@ def merge_accounts(old_user, new_user):
 
 def all_unexpired_sessions_for_user(user):
     user_sessions = []
-    all_sessions = Session.objects.filter(expire_date__gte=datetime.datetime.now())
+    all_sessions = Session.objects.filter(expire_date__gte=timezone.now())
     for session in all_sessions:
         session_data = session.get_decoded()
         if user.pk == session_data.get('_auth_user_id'):
@@ -64,8 +64,10 @@ def cancel_user(user):
     user.is_active = False
     user.is_deleted = True
     user.date_left = timezone.now()
-    user.email = ''
+    user.email = None
     user.set_unusable_password()
     user.username = 'u%s' % user.pk
+    # FIXME: teams without owner may appear
+    user.teammembership_set.all().delete()
     user.save()
     delete_all_unexpired_sessions_for_user(user)

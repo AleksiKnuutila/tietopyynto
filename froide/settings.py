@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import absolute_import
-
-from configurations import Configuration, importer, values
-importer.install(check_options=True)
+from __future__ import absolute_import, unicode_literals
 
 import os
 import sys
@@ -10,9 +7,15 @@ import re
 
 from celery.schedules import crontab
 
-rec = lambda x: re.compile(x, re.I | re.U)
+from configurations import Configuration, importer, values
+importer.install(check_options=True)
 
-gettext = lambda s: s
+from django.utils.translation import ugettext_lazy as _
+
+
+def rec(x):
+    return re.compile(x, re.I | re.U)
+
 
 # Django settings for froide project.
 
@@ -34,17 +37,14 @@ class Base(Configuration):
         'django_comments',
         'django.contrib.flatpages',
         'django.contrib.sitemaps',
+        'django.contrib.humanize',
 
         # external
         'haystack',
         'taggit',
-        'floppyforms',
         'overextends',
-        'tastypie',
         'storages',
-        'compressor',
-	'django_extensions',
-	'robots',
+        'treebeard',
 
         # local
         'froide.foirequest',
@@ -52,9 +52,13 @@ class Base(Configuration):
         'froide.frontpage',
         'froide.publicbody',
         'froide.account',
-        'froide.redaction',
+        'froide.team',
         'froide.foisite',
         'froide.helper',
+
+        # API
+        'oauth2_provider',
+        'rest_framework',
     ])
 
     CACHES = values.CacheURLValue('dummy://')
@@ -90,7 +94,8 @@ class Base(Configuration):
 
     # Absolute filesystem path to the directory that will hold user-uploaded files.
     # Example: "/home/media/media.lawrence.com/media/"
-    MEDIA_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT, "..", "files"))
+    MEDIA_ROOT = values.Value(os.path.abspath(os.path.join(PROJECT_ROOT,
+                                                           "..", "files")))
 
     # Sub path in MEDIA_ROOT that will hold FOI attachments
     FOI_MEDIA_PATH = values.Value('foi')
@@ -99,18 +104,13 @@ class Base(Configuration):
     # Don't put anything in this directory yourself; store your static files
     # in apps' "static/" subdirectories and in STATICFILES_DIRS.
     # Example: "/home/media/media.lawrence.com/static/"
-    STATIC_ROOT = os.path.abspath(os.path.join(PROJECT_ROOT, "..", "public"))
+    STATIC_ROOT = values.Value(os.path.abspath(os.path.join(PROJECT_ROOT,
+                                                            "..", "public")))
 
     # Additional locations of static files
     STATICFILES_DIRS = (
         os.path.join(PROJECT_ROOT, "static"),
     )
-    COMPRESS_ENABLED = values.BooleanValue(False)
-    COMPRESS_JS_FILTERS = ['compressor.filters.jsmin.JSMinFilter']
-    COMPRESS_CSS_FILTERS = ['compressor.filters.css_default.CssAbsoluteFilter',
-                            'compressor.filters.cssmin.CSSMinFilter']
-    COMPRESS_PARSER = 'compressor.parser.HtmlParser'
-
     # ########## URLs #################
 
     ROOT_URLCONF = values.Value('froide.urls')
@@ -139,20 +139,17 @@ class Base(Configuration):
     # ######## Backends, Finders, Processors, Classes ####
 
     AUTH_USER_MODEL = values.Value('account.User')
-    CUSTOM_AUTH_USER_MODEL_DB = values.Value('')
+    PASSWORD_HASHERS = [
+        'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+        'froide.account.hashers.PBKDF2WrappedSHA1PasswordHasher',
+    ]
 
     # List of finder classes that know how to find static files in
     # various locations.
     STATICFILES_FINDERS = (
         'django.contrib.staticfiles.finders.AppDirectoriesFinder',
         'django.contrib.staticfiles.finders.FileSystemFinder',
-        'compressor.finders.CompressorFinder',
     )
-
-    AUTHENTICATION_BACKENDS = [
-        "froide.helper.auth.EmailBackend",
-        "django.contrib.auth.backends.ModelBackend",
-    ]
 
     TEMPLATES = [
         {
@@ -176,19 +173,22 @@ class Base(Configuration):
                     'django.contrib.auth.context_processors.auth',
                     'django.contrib.messages.context_processors.messages',
                     'froide.helper.context_processors.froide',
-                    'froide.helper.context_processors.site_settings'
+                    'froide.helper.context_processors.site_settings',
+                    'froide.helper.context_processors.block_helper'
                 ]
             }
         }
     ]
 
-    MIDDLEWARE_CLASSES = [
+    MIDDLEWARE = [
         'django.contrib.sessions.middleware.SessionMiddleware',
         'django.middleware.locale.LocaleMiddleware',
         'django.middleware.common.CommonMiddleware',
         'django.middleware.csrf.CsrfViewMiddleware',
         'django.contrib.auth.middleware.AuthenticationMiddleware',
+        'oauth2_provider.middleware.OAuth2TokenMiddleware',
         'django.contrib.messages.middleware.MessageMiddleware',
+        'django.middleware.clickjacking.XFrameOptionsMiddleware',
     ]
 
     # ######### I18N and L10N ##################
@@ -207,17 +207,17 @@ class Base(Configuration):
     # http://www.i18nguy.com/unicode/language-identifiers.html
     LANGUAGE_CODE = values.Value('en')
     LANGUAGES = (
-        ('en', gettext('English')),
-        ('es', gettext('Spanish')),
-        ('fi-fi', gettext('Finnish (Finland)')),
-        ('de', gettext('German')),
-        ('da-dk', gettext('Danish (Denmark)')),
-        ('it', gettext('Italian')),
-        ('pt', gettext('Portuguese')),
-        ('sv-se', gettext('Swedish (Sweden)')),
-        ('sv-fi', gettext('Swedish (Finland)')),
-        ('zh-cn', gettext('Chinese (Simplified)')),
-        ('zh-hk', gettext('Chinese (Traditional, Hong Kong)')),
+        ('en', _('English')),
+        ('es', _('Spanish')),
+        ('fi-fi', _('Finnish (Finland)')),
+        ('de', _('German')),
+        ('da-dk', _('Danish (Denmark)')),
+        ('it', _('Italian')),
+        ('pt', _('Portuguese')),
+        ('sv-se', _('Swedish (Sweden)')),
+        ('sv-fi', _('Swedish (Finland)')),
+        ('zh-cn', _('Chinese (Simplified)')),
+        ('zh-hk', _('Chinese (Traditional, Hong Kong)')),
     )
 
     # If you set this to False, Django will make some optimizations so as not
@@ -301,7 +301,6 @@ class Base(Configuration):
     # ######## Security ###########
 
     CSRF_COOKIE_SECURE = False
-    CSRF_COOKIE_HTTPONLY = True
     CSRF_FAILURE_VIEW = values.Value('froide.account.views.csrf_failure')
 
     # Change this
@@ -314,7 +313,7 @@ class Base(Configuration):
 
     # ######## Celery #############
 
-    CELERYBEAT_SCHEDULE = {
+    CELERY_BEAT_SCHEDULE = {
         'fetch-mail': {
             'task': 'froide.foirequest.tasks.fetch_mail',
             'schedule': crontab(),
@@ -337,12 +336,17 @@ class Base(Configuration):
         },
     }
 
-    CELERY_ALWAYS_EAGER = values.BooleanValue(True)
+    CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
 
-    CELERY_ROUTES = {
+    CELERY_TASK_ROUTES = {
         'froide.foirequest.tasks.fetch_mail': {"queue": "emailfetch"},
     }
-    CELERY_TIMEZONE = TIME_ZONE
+    CELERY_TIMEZONE = 'UTC'
+    # We need to serialize email data as binary
+    # which doesn't work well in JSON
+    CELERY_TASK_SERIALIZER = 'pickle'
+    CELERY_RESULT_SERIALIZER = 'pickle'
+    CELERY_ACCEPT_CONTENT = ['pickle']
 
     # ######## Haystack ###########
 
@@ -352,18 +356,42 @@ class Base(Configuration):
         }
     }
 
-    # ######### Tastypie #########
+    # ######### API #########
 
     # Do not include xml by default, so lxml doesn't need to be present
     TASTYPIE_DEFAULT_FORMATS = ['json']
+
+    OAUTH2_PROVIDER = {
+        'SCOPES': {
+            'read:user': _('Access to user status'),
+            'read:profile': _('Read user profile information'),
+            'read:email': _('Read user email'),
+            'read:request': _('Read my (private) requests'),
+            'make:request': _('Make requests on my behalf'),
+        }
+    }
+    OAUTH2_PROVIDER_APPLICATION_MODEL = 'account.Application'
+
+    LOGIN_URL = 'account-login'
+
+    REST_FRAMEWORK = {
+        'DEFAULT_AUTHENTICATION_CLASSES': (
+            'rest_framework.authentication.SessionAuthentication',
+            'oauth2_provider.contrib.rest_framework.OAuth2Authentication',
+        ),
+        'DEFAULT_PERMISSION_CLASSES': (
+            'rest_framework.permissions.IsAuthenticatedOrReadOnly',
+        ),
+        'DEFAULT_PAGINATION_CLASS': 'froide.helper.api_utils.CustomLimitOffsetPagination',
+        'PAGE_SIZE': 50,
+        'DEFAULT_FILTER_BACKENDS': ('django_filters.rest_framework.DjangoFilterBackend',)
+    }
 
     # ######### Froide settings ########
 
     FROIDE_THEME = None
 
     FROIDE_CONFIG = dict(
-        create_new_publicbody=True,
-        publicbody_empty=True,
         user_can_hide_web=True,
         public_body_officials_public=True,
         public_body_officials_email_public=False,
@@ -372,11 +400,17 @@ class Base(Configuration):
         currency="Euro",
         default_law=1,
         search_engine_query="http://www.google.de/search?as_q=%(query)s&as_epq=&as_oq=&as_eq=&hl=en&lr=&cr=&as_ft=i&as_filetype=&as_qdr=all&as_occt=any&as_dt=i&as_sitesearch=%(domain)s&as_rights=&safe=images",
-        greetings=[rec(u"Dear (?:Mr\.?|Ms\.? .*?)")],
+        greetings=[rec(r"Dear (?:Mr\.?|Mr?s\.? .*?)")],
+        redact_salutation=r"(?:Mr\.?|Mr?s\.?)",
         custom_replacements=[],
-        closings=[rec(u"Sincerely yours,?")],
+        closings=[rec(r"Sincerely yours,?")],
         public_body_boosts={},
+        autocomplete_body_boosts={},
         dryrun=False,
+        read_receipt=False,
+        delivery_receipt=False,
+        dsn=False,
+        delivery_reporter=None,
         request_throttle=None,  # Set to [(15, 7 * 24 * 60 * 60),] for 15 requests in 7 days
         dryrun_domain="testmail.example.com",
         allow_pseudonym=False,
@@ -401,6 +435,8 @@ class Base(Configuration):
     EMAIL_HOST_PASSWORD = values.Value("")
     EMAIL_USE_TLS = values.BooleanValue(True)
 
+    # Custom backend that also requests Delivery Status
+    FOI_EMAIL_BACKEND = 'froide.foirequest.smtp.FoiEmailBackend'
     # Froide special case settings
     # IMAP settings for fetching mail
     FOI_EMAIL_PORT_IMAP = values.IntegerValue(993)
@@ -414,7 +450,7 @@ class Base(Configuration):
     FOI_EMAIL_HOST_FROM = values.Value(FOI_EMAIL_HOST_USER)
     FOI_EMAIL_HOST_PASSWORD = values.Value(FOI_EMAIL_ACCOUNT_PASSWORD)
     FOI_EMAIL_HOST = values.Value("smtp.example.com")
-    FOI_EMAIL_PORT = values.IntegerValue(537)
+    FOI_EMAIL_PORT = values.IntegerValue(587)
     FOI_EMAIL_USE_TLS = values.BooleanValue(True)
 
     # The FoI Mail can use a different account
@@ -473,8 +509,8 @@ class Test(Base):
         config.update(dict(
             doc_conversion_call_func=self._fake_convert_pdf,
             default_law=10000,
-            greetings=[rec(u"Dear ((?:Mr\.?|Ms\.?) .*),?"), rec(u'Sehr geehrter? ((Herr|Frau) .*),?')],
-            closings=[rec(u"Sincerely yours,?"), rec(u'Mit freundlichen Grüßen')],
+            greetings=[rec(r"Dear ((?:Mr\.?|Ms\.?) .*),?"), rec(r'Sehr geehrter? ((Herr|Frau) .*),?')],
+            closings=[rec(r"Sincerely yours,?"), rec(r'Mit freundlichen Grüßen')],
             public_body_officials_public=False
         ))
         return config
@@ -486,7 +522,7 @@ class Test(Base):
     MESSAGE_STORAGE = 'django.contrib.messages.storage.cookie.CookieStorage'
     CACHES = values.CacheURLValue('locmem://')
 
-    TEST_SELENIUM_DRIVER = values.Value('phantomjs')
+    TEST_SELENIUM_DRIVER = values.Value('chrome_headless')
 
     USE_X_ACCEL_REDIRECT = True
 
@@ -510,10 +546,10 @@ class Test(Base):
             },
         }
 
-    CELERY_ALWAYS_EAGER = True
-    CELERY_EAGER_PROPAGATES_EXCEPTIONS = True
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
 
-    MIDDLEWARE_CLASSES = [
+    MIDDLEWARE = [
         'django.contrib.sessions.middleware.SessionMiddleware',
         'django.middleware.common.CommonMiddleware',
         'django.middleware.csrf.CsrfViewMiddleware',
@@ -525,7 +561,7 @@ class Test(Base):
 class German(object):
     LANGUAGE_CODE = "de"
     LANGUAGES = (
-        ('de', gettext('German')),
+        ('de', _('German')),
     )
 
     DATE_FORMAT = "d. F Y"
@@ -558,15 +594,19 @@ class German(object):
             "payment_possible": True,
             "currency": "Euro",
             "public_body_boosts": {
-                u"Oberste Bundesbeh\xf6rde": 1.9,
-                u"Obere Bundesbeh\xf6rde": 1.1,
-                u"Ministerium": 1.8,
-                u"Senatsverwaltung": 1.8,
-                u"Kommunalverwaltung": 1.7,
-                u"Andere": 0.8
+                "Oberste Bundesbeh\xf6rde": 1.9,
+                "Obere Bundesbeh\xf6rde": 1.1,
+                "Ministerium": 1.8,
+                "Senatsverwaltung": 1.8,
+                "Kommunalverwaltung": 1.7,
+                "Andere": 0.8
             },
-            'greetings': [rec(u"Sehr geehrt(er? (?:Herr|Frau)(?: ?Dr\.?)?(?: ?Prof\.?)? .*)")],
-            'closings': [rec(u"Mit freundlichen Gr\xfc\xdfen,?"), rec("Mit den besten Gr\xfc\xdfen,?")]
+            "autocomplete_body_boosts": {
+                "Bund": 1.5
+            },
+            'greetings': [rec(r"Sehr geehrt(er? (?:Herr|Frau)(?: ?Dr\.?)?(?: ?Prof\.?)? .*)")],
+            'redact_salutation': r"(?:er?\s+)?(?:Herr|Frau)",
+            'closings': [rec(r"Mit freundlichen Gr\xfc\xdfen,?"), rec(r"Mit den besten Grüßen,?")]
         })
         return german_config
 
@@ -581,9 +621,8 @@ class Production(Base):
         return TEMP
 
     ALLOWED_HOSTS = values.TupleValue(('example.com',))
-    CELERY_ALWAYS_EAGER = values.BooleanValue(False)
-    COMPRESS_ENABLED = values.BooleanValue(True)
-    COMPRESS_OFFLINE = values.BooleanValue(True)
+    CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(False)
+    STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.ManifestStaticFilesStorage'
 
 
 class SSLSite(object):
@@ -602,11 +641,9 @@ class SSLNginxProduction(SSLSite, NginxSecureStatic, Production):
 
 
 class AmazonS3(object):
-    STATICFILES_STORAGE = values.Value('froide.helper.storage_utils.CachedS3BotoStorage')
-    COMPRESS_STORAGE = values.Value('froide.helper.storage_utils.CachedS3BotoStorage')
+    STATICFILES_STORAGE = values.Value('storages.backends.s3boto.S3BotoStorage')
 
     STATIC_URL = values.Value('/static/')
-    COMPRESS_URL = values.Value(STATIC_URL)
 
     DEFAULT_FILE_STORAGE = values.Value('storages.backends.s3boto.S3BotoStorage')
 
@@ -621,8 +658,8 @@ class Heroku(Production):
     ALLOWED_HOSTS = ['*']
     SECRET_KEY = values.SecretValue()
 
-    CELERY_ALWAYS_EAGER = values.BooleanValue(True)
-    BROKER_URL = values.Value('amqp://')
+    CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+    CELERY_BROKER_URL = values.Value('amqp://')
 
     @property
     def LOGGING(self):

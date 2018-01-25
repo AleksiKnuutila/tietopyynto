@@ -2,7 +2,6 @@
 .DS_Store
 *.vim
 *.db
-*.mo
 local_*.py
 data/
 solr/
@@ -15,6 +14,7 @@ htmlcov/
 public/
 build/
 dist/
+venv/
 *.egg-info
 *.log
 froide/tests/froide_test_whoosh_db
@@ -23,3 +23,6 @@ celeryd.pid
 tietopyynto-files.tar.gz
 froide/logs
 celerybeat-schedule
+node_modules/
+*.map
+favicon-result.json

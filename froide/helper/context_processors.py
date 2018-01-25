@@ -1,5 +1,7 @@
 from django.conf import settings
 
+from .templatetags.block_helper import VAR_NAME, get_default_dict
+
 
 def froide(request):
     return {"froide": settings.FROIDE_CONFIG}
@@ -15,3 +17,7 @@ def site_settings(request):
         ),
         "fb_page": getattr(settings, "FACEBOOK_PAGE", None)
     }
+
+
+def block_helper(request):
+    return {VAR_NAME: get_default_dict()}

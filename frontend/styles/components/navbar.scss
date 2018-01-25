@@ -1,0 +1,91 @@
+.nav-compact > li > a{
+  padding: 2px 15px !important;
+}
+
+.nav-compact .nav-header {
+  padding-top: 15px;
+}
+
+.nav-compact .nav-link.active {
+  font-weight: bold;
+}
+
+.navbar-brand-name {
+  display: inline-block;
+  transform: translateY(11px);
+  font-size: 1.5rem;
+}
+
+@include media-breakpoint-up(md) {
+  .navbar-brand {
+    transform: translateY(11px);
+  }
+}
+
+.navbar-logo {
+  display: inline-block;
+  margin-right: $spacer * 0.5;
+}
+
+@media (max-width: 400px) {
+  .navbar-toggler-title {
+    display: none;
+  }
+}
+
+.navbar .nav > li > a:hover {
+    color: #06C;
+}
+
+.special-nav-item > a {
+  color: $black;
+}
+
+.navbar-secondary {
+  padding-top: 0;
+}
+
+.navbar-collapse {
+  flex-wrap: wrap;
+}
+
+@include media-breakpoint-up(md) {
+
+  .navbar-nav-secondary {
+    padding-bottom: $spacer;
+    width: 100%;
+    order: -1;
+    justify-content: flex-end;
+    font-size: $small-font-size;
+
+    .nav-item {
+      background-color: $gray-200;
+      margin-left: $spacer * 0.25;
+
+      &.special-nav-secondary-item {
+        border-radius: 0px;
+        background: theme-color("danger");
+        .nav-link {
+          color: $white !important;
+        }
+      }
+
+      .nav-link {
+        padding: $spacer * 0.25;
+      }
+    }
+  }
+}
+
+.account-dropdown {
+    padding: 0 !important;
+    margin: 10px 0;
+    background-color: transparent !important;
+}
+
+.account-dropdown .account-name {
+    float: left;
+    font-size: 60%;
+    margin: 2px 0 0 5px;
+    line-height: 110%;
+}

@@ -6,13 +6,15 @@ import random
 
 from django.conf import settings
 from django.core.mail import get_connection, EmailMessage, mail_managers
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.utils.translation import override, ugettext, ugettext_lazy as _
 from django.utils.six import BytesIO, string_types
 
 from froide.helper.email_utils import (EmailParser, get_unread_mails,
                                        make_address)
 from froide.helper.name_generator import get_name_from_number
+
+from .utils import get_publicbody_for_email
 
 
 unknown_foimail_message = _('''We received an FoI mail to this address: %(address)s.
@@ -26,8 +28,15 @@ Please investigate! %(url)s
 
 def send_foi_mail(subject, message, from_email, recipient_list,
                   attachments=None, fail_silently=False, **kwargs):
+    backend = None
+    if kwargs.get('dsn'):
+        if hasattr(settings, 'FOI_EMAIL_BACKEND'):
+            backend = settings.FOI_EMAIL_BACKEND
+
+    if not backend:
+        backend = settings.EMAIL_BACKEND
     connection = get_connection(
-        backend=getattr(settings, 'FOI_EMAIL_BACKEND', settings.EMAIL_BACKEND),
+        backend=backend,
         username=settings.FOI_EMAIL_HOST_USER,
         password=settings.FOI_EMAIL_HOST_PASSWORD,
         host=settings.FOI_EMAIL_HOST,
@@ -36,8 +45,6 @@ def send_foi_mail(subject, message, from_email, recipient_list,
         fail_silently=fail_silently
     )
     headers = {}
-    if "message_id" in kwargs:
-        headers['Message-ID'] = kwargs.pop("message_id")
     if settings.FOI_EMAIL_FIXED_FROM_ADDRESS:
         name, mailaddr = parseaddr(from_email)
         from_address = settings.FOI_EMAIL_HOST_FROM
@@ -45,8 +52,16 @@ def send_foi_mail(subject, message, from_email, recipient_list,
         headers['Reply-To'] = make_address(mailaddr, name)
     else:
         headers['Reply-To'] = from_email
+
+    if kwargs.get('read_receipt'):
+        headers['Disposition-Notification-To'] = from_email
+    if kwargs.get('delivery_receipt'):
+        headers['Return-Receipt-To'] = from_email
+    if kwargs.get('froide_message_id'):
+        headers['X-Froide-Message-Id'] = kwargs.get('froide_message_id')
+
     email = EmailMessage(subject, message, from_email, recipient_list,
-                        connection=connection, headers=headers)
+                         connection=connection, headers=headers)
     if attachments is not None:
         for name, data, mime_type in attachments:
             email.attach(name, data, mime_type)
@@ -63,22 +78,27 @@ def _process_mail(mail_string, mail_type=None, manual=False):
 
 
 def create_deferred(secret_mail, mail_string, b64_encoded=False, spam=False,
-                    subject=_('Unknown FoI-Mail Recipient'), body=unknown_foimail_message):
+                    subject=_('Unknown FoI-Mail Recipient'),
+                    body=unknown_foimail_message, request=None):
     from .models import DeferredMessage
 
     if mail_string is not None:
         if not b64_encoded:
-            mail_string = base64.b64encode(mail_string.encode('utf-8')).decode("utf-8")
+            mail_string = base64.b64encode(mail_string.encode('utf-8'))
+            mail_string = mail_string.decode("utf-8")
     DeferredMessage.objects.create(
         recipient=secret_mail,
         mail=mail_string,
-        spam=spam
+        spam=spam,
+        request=request
     )
     with override(settings.LANGUAGE_CODE):
-        mail_managers(subject,
+        url = reverse('admin:foirequest_deferredmessage_changelist')
+        mail_managers(
+            subject,
             body % {
                 'address': secret_mail,
-                'url': settings.SITE_URL + reverse('admin:foirequest_deferredmessage_changelist')
+                'url': settings.SITE_URL + url
             }
         )
 
@@ -123,15 +143,17 @@ def get_foirequest_from_mail(email):
 def _deliver_mail(email, mail_string=None, manual=False):
     from .models import DeferredMessage
 
-    received_list = email['to'] + email['cc'] \
-            + email['resent_to'] + email['resent_cc']
+    received_list = (email['to'] + email['cc'] +
+                     email['resent_to'] + email['resent_cc'])
     # TODO: BCC?
 
     domains = settings.FOI_EMAIL_DOMAIN
     if isinstance(domains, string_types):
         domains = [domains]
 
-    mail_filter = lambda x: x[1].endswith(tuple(["@%s" % d for d in domains]))
+    def mail_filter(x):
+        return x[1].endswith(tuple(["@%s" % d for d in domains]))
+
     received_list = [r for r in received_list if mail_filter(r)]
 
     # normalize to first FOI_EMAIL_DOMAIN
@@ -156,38 +178,46 @@ def _deliver_mail(email, mail_string=None, manual=False):
 
         foi_request = get_foirequest_from_mail(secret_mail)
         if not foi_request:
-            deferred = DeferredMessage.objects.filter(recipient=secret_mail, request__isnull=False)
+            deferred = DeferredMessage.objects.filter(
+                recipient=secret_mail, request__isnull=False)
             if len(deferred) == 0 or len(deferred) > 1:
                 # Can't do automatic matching!
-                create_deferred(secret_mail, mail_string, b64_encoded=b64_encoded, spam=False)
+                create_deferred(
+                    secret_mail, mail_string, b64_encoded=b64_encoded,
+                    spam=False
+                )
                 continue
             else:
                 deferred = deferred[0]
                 foi_request = deferred.request
 
-        # Check for spam
+        pb = None
         if not manual:
-            messages = foi_request.response_messages()
-            reply_domains = set(m.sender_email.split('@')[1] for m in messages
-                             if m.sender_email and '@' in m.sender_email)
-            reply_domains.add(foi_request.public_body.email.split('@')[1])
-            strip_subdomains = lambda x: '.'.join(x.split('.')[-2:])
-            # Strip subdomains
-            reply_domains = set([strip_subdomains(x) for x in reply_domains])
+            if foi_request.closed:
+                # Request is closed and will not receive messages
+                continue
 
+            # Check for spam
             sender_email = email['from'][1]
-            if len(messages) > 0 and sender_email and '@' in sender_email:
-                email_domain = strip_subdomains(sender_email.split('@')[1])
-                if email_domain not in reply_domains:
-                    create_deferred(secret_mail, mail_string, b64_encoded=b64_encoded,
-                        spam=True, subject=_('Possible Spam Mail received'), body=spam_message)
-                    continue
+            pb = get_publicbody_for_email(sender_email, foi_request)
 
-        foi_request.add_message_from_email(email, mail_string)
+            if pb is None:
+                create_deferred(
+                    secret_mail, mail_string,
+                    b64_encoded=b64_encoded,
+                    spam=True,
+                    subject=_('Possible Spam Mail received'),
+                    body=spam_message,
+                    request=foi_request
+                )
+                continue
+
+        foi_request.add_message_from_email(email, mail_string, publicbody=pb)
 
 
 def _fetch_mail():
-    for rfc_data in get_unread_mails(settings.FOI_EMAIL_HOST_IMAP,
+    for rfc_data in get_unread_mails(
+            settings.FOI_EMAIL_HOST_IMAP,
             settings.FOI_EMAIL_PORT_IMAP,
             settings.FOI_EMAIL_ACCOUNT_NAME,
             settings.FOI_EMAIL_ACCOUNT_PASSWORD,
@@ -228,7 +258,8 @@ def package_foirequest(foirequest):
             else:
                 filename = '%s_%s.txt' % (date_prefix, ugettext('requester'))
 
-            zfile.writestr(filename, message.get_formated(att_queryset).encode('utf-8'))
+            payload = message.get_formated(att_queryset).encode('utf-8')
+            zfile.writestr(filename, payload)
 
             for attachment in att_queryset:
                 if not attachment.file:

@@ -1,12 +1,14 @@
 from __future__ import with_statement
 
+import unittest
+
 from django.utils.six import text_type as str
 from django.test import TestCase
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 
-from froide.publicbody.models import PublicBody, PublicBodyTag, Jurisdiction
+from froide.publicbody.models import PublicBody, Category, Jurisdiction
 from froide.foirequest.models import FoiRequest, FoiAttachment
 from froide.foirequest.tests import factories
 
@@ -26,34 +28,35 @@ class WebTest(TestCase):
     def test_request_to(self):
         p = PublicBody.objects.all()[0]
         response = self.client.get(reverse('foirequest-make_request',
-            kwargs={'public_body': p.slug}))
+            kwargs={'publicbody_slug': p.slug}))
         self.assertEqual(response.status_code, 200)
         p.email = ""
         p.save()
         response = self.client.get(reverse('foirequest-make_request',
-            kwargs={'public_body': p.slug}))
+            kwargs={'publicbody_slug': p.slug}))
         self.assertEqual(response.status_code, 404)
 
     def test_request_prefilled(self):
         p = PublicBody.objects.all()[0]
         response = self.client.get(reverse('foirequest-make_request',
-            kwargs={'public_body': p.slug}) + '?body=THEBODY&subject=THESUBJECT')
+            kwargs={'publicbody_slug': p.slug}) + '?body=THEBODY&subject=THESUBJECT')
         self.assertEqual(response.status_code, 200)
         content = response.content.decode('utf-8')
         self.assertIn('THEBODY', content)
         self.assertIn('THESUBJECT', content)
 
+    @unittest.skip('No longer redirect to slug on pb ids')
     def test_request_prefilled_redirect(self):
         p = PublicBody.objects.all()[0]
         query = '?body=THEBODY&subject=THESUBJECT'
         response = self.client.get(reverse('foirequest-make_request',
-            kwargs={'public_body_id': str(p.pk)}) + query)
+            kwargs={'publicbody_ids': str(p.pk)}) + query)
         self.assertRedirects(
             response,
             reverse('foirequest-make_request', kwargs={
-                'public_body': p.slug
+                'publicbody_slug': p.slug
                 }) + query,
-            status_code=301
+            status_code=200
         )
 
     def test_list_requests(self):
@@ -69,7 +72,7 @@ class WebTest(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 404)
 
-        for topic in PublicBodyTag.objects.filter(is_topic=True):
+        for topic in Category.objects.filter(is_topic=True):
             response = self.client.get(reverse('foirequest-list',
                 kwargs={"topic": topic.slug}))
             self.assertEqual(response.status_code, 200)
@@ -90,7 +93,7 @@ class WebTest(TestCase):
                 kwargs={"status": urlpart, 'jurisdiction': juris.slug}))
             self.assertEqual(response.status_code, 200)
 
-        for topic in PublicBodyTag.objects.filter(is_topic=True):
+        for topic in Category.objects.filter(is_topic=True):
             response = self.client.get(reverse('foirequest-list',
                 kwargs={"topic": topic.slug, 'jurisdiction': juris.slug}))
             self.assertEqual(response.status_code, 200)
@@ -104,7 +107,7 @@ class WebTest(TestCase):
         req.save()
         response = self.client.get(reverse('foirequest-list', kwargs={"tag": tag_slug}))
         self.assertEqual(response.status_code, 200)
-        self.assertIn(req.title, response.content.decode('utf-8'))
+        self.assertContains(response, req.title)
         response = self.client.get(reverse('foirequest-list_feed', kwargs={
             'tag': tag_slug
         }))
@@ -122,7 +125,7 @@ class WebTest(TestCase):
         pb = req.public_body
         response = self.client.get(reverse('foirequest-list', kwargs={"public_body": pb.slug}))
         self.assertEqual(response.status_code, 200)
-        self.assertIn(req.title, response.content.decode('utf-8'))
+        self.assertContains(response, req.title)
         response = self.client.get(reverse('foirequest-list_feed', kwargs={"public_body": pb.slug}))
         self.assertEqual(response.status_code, 200)
         response = self.client.get(reverse('foirequest-list_feed_atom', kwargs={"public_body": pb.slug}))
@@ -135,16 +138,16 @@ class WebTest(TestCase):
         req2 = reqs[1]
         response = self.client.get(reverse('foirequest-list'))
         self.assertEqual(response.status_code, 200)
-        self.assertIn(req1.title, response.content.decode('utf-8'))
-        self.assertIn(req2.title, response.content.decode('utf-8'))
+        self.assertContains(response, req1.title)
+        self.assertContains(response, req2.title)
         req1.same_as = req2
         req1.save()
         req2.same_as_count = 1
         req2.save()
         response = self.client.get(reverse('foirequest-list'))
         self.assertEqual(response.status_code, 200)
-        self.assertNotIn(req1.title, response.content.decode('utf-8'))
-        self.assertIn(req2.title, response.content.decode('utf-8'))
+        self.assertNotContains(response, req1.title)
+        self.assertContains(response, req2.title)
 
     def test_show_request(self):
         req = FoiRequest.objects.all()[0]
@@ -159,7 +162,7 @@ class WebTest(TestCase):
         response = self.client.get(reverse('foirequest-show',
                 kwargs={"slug": req.slug}))
         self.assertEqual(response.status_code, 403)
-        self.client.login(username="sw", password="froide")
+        self.client.login(email="info@fragdenstaat.de", password="froide")
         response = self.client.get(reverse('foirequest-show',
                 kwargs={"slug": req.slug}))
         self.assertEqual(response.status_code, 200)
@@ -183,6 +186,8 @@ class WebTest(TestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_auth_links(self):
+        from froide.foirequest.auth import get_foirequest_auth_code
+
         req = FoiRequest.objects.all()[0]
         req.visibility = 1
         req.save()
@@ -193,11 +198,14 @@ class WebTest(TestCase):
             kwargs={'obj_id': req.id, 'code': '0a'}))
         self.assertEqual(response.status_code, 403)
         response = self.client.get(reverse('foirequest-auth',
-            kwargs={'obj_id': req.id, 'code': req.get_auth_code()}))
+            kwargs={
+                'obj_id': req.id,
+                'code': get_foirequest_auth_code(req)
+            }))
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response['Location'].endswith(req.get_absolute_url()))
         # Check logged in with wrong code
-        self.client.login(username="sw", password="froide")
+        self.client.login(email="info@fragdenstaat.de", password="froide")
         response = self.client.get(reverse('foirequest-auth',
             kwargs={'obj_id': req.id, 'code': '0a'}))
         self.assertEqual(response.status_code, 302)
@@ -226,7 +234,7 @@ class WebTest(TestCase):
         }))
         self.assertEqual(response.status_code, 200)
 
-        topic = PublicBodyTag.objects.filter(is_topic=True)[0]
+        topic = Category.objects.filter(is_topic=True)[0]
         response = self.client.get(reverse('foirequest-list_feed', kwargs={
             'jurisdiction': juris.slug,
             'topic': topic.slug
@@ -261,22 +269,22 @@ class WebTest(TestCase):
     def test_unchecked(self):
         response = self.client.get(reverse('foirequest-list_unchecked'))
         self.assertEqual(response.status_code, 403)
-        self.client.login(username="dummy", password="froide")
+        self.client.login(email="dummy@example.org", password="froide")
         response = self.client.get(reverse('foirequest-list_unchecked'))
         self.assertEqual(response.status_code, 403)
         self.client.logout()
-        self.client.login(username="sw", password="froide")
+        self.client.login(email="info@fragdenstaat.de", password="froide")
         response = self.client.get(reverse('foirequest-list_unchecked'))
         self.assertEqual(response.status_code, 200)
 
     def test_dashboard(self):
         response = self.client.get(reverse('dashboard'))
         self.assertEqual(response.status_code, 403)
-        self.client.login(username="dummy", password="froide")
+        self.client.login(email="dummy@example.org", password="froide")
         response = self.client.get(reverse('dashboard'))
         self.assertEqual(response.status_code, 403)
         self.client.logout()
-        self.client.login(username="sw", password="froide")
+        self.client.login(email="info@fragdenstaat.de", password="froide")
         response = self.client.get(reverse('dashboard'))
         self.assertEqual(response.status_code, 200)
 
@@ -296,7 +304,7 @@ class MediaServingTest(TestCase):
         req.save()
         response = self.client.get(att.get_absolute_url())
         self.assertEqual(response.status_code, 403)
-        self.client.login(username='sw', password='froide')
+        self.client.login(email='info@fragdenstaat.de', password='froide')
         response = self.client.get(att.get_absolute_url())
         self.assertEqual(response.status_code, 200)
         self.assertIn('X-Accel-Redirect', response)
@@ -307,7 +315,7 @@ class MediaServingTest(TestCase):
         att = FoiAttachment.objects.filter(approved=False)[0]
         response = self.client.get(att.get_absolute_url())
         self.assertEqual(response.status_code, 403)
-        self.client.login(username='sw', password='froide')
+        self.client.login(email='info@fragdenstaat.de', password='froide')
         response = self.client.get(att.get_absolute_url())
         self.assertEqual(response.status_code, 200)
 
@@ -351,14 +359,16 @@ class PerformanceTest(TestCase):
         - FoiAttachments of that request (+1)
         - FoiEvents of that request (+1)
         - FoiRequestFollowerCount + if following (+2)
+        - team menu: has teams + permissions/groups (+3)
         - Tags (+1)
         - ContentType + Comments for each FoiMessage (+3)
         """
+        TOTAL_EXPECTED_REQUESTS = 15
         req = factories.FoiRequestFactory.create(site=self.site)
         factories.FoiMessageFactory.create(request=req)
         mes2 = factories.FoiMessageFactory.create(request=req)
         factories.FoiAttachmentFactory.create(belongs_to=mes2)
-        self.client.login(username='dummy', password='froide')
+        self.client.login(email='dummy@example.org', password='froide')
         ContentType.objects.clear_cache()
-        with self.assertNumQueries(12):
+        with self.assertNumQueries(TOTAL_EXPECTED_REQUESTS):
             self.client.get(req.get_absolute_url())

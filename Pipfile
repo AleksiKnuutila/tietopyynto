@@ -1,0 +1,43 @@
+[[source]]
+
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+
+
+[packages]
+
+django = "<2.0"
+markdown = "*"
+django-haystack = "*"
+django-taggit = "*"
+pytz = "*"
+requests = "*"
+django-overextends = "*"
+python-magic = "*"
+python-mimeparse = ">=0.1.4"
+django-configurations = "*"
+django-storages = "*"
+dj-database-url = "*"
+django-cache-url = "*"
+django-contrib-comments = "*"
+unicodecsv = "*"
+celery = "*"
+"pypdf2" = "*"
+reportlab = "*"
+wand = "*"
+djangorestframework = "*"
+django-oauth-toolkit = "*"
+coreapi = "*"
+django-filter = "*"
+# until https://github.com/django-treebeard/django-treebeard/pull/91 resolved
+django-treebeard = {git = "git://github.com/stefanw/django-treebeard.git", editable = true, ref = "deploy"}
+
+
+[dev-packages]
+
+selenium = "*"
+"flake8" = "*"
+factory-boy = "*"
+coverage = "*"
+mock = "*"
+whoosh = "*"

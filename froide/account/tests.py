@@ -1,5 +1,7 @@
+from __future__ import unicode_literals
+
 import re
-import datetime
+from datetime import timedelta
 
 try:
     from urllib.parse import urlencode
@@ -10,22 +12,27 @@ from django.utils.six import text_type as str
 from django.test import TestCase
 from django.contrib.admin.sites import AdminSite
 from django.test.client import RequestFactory
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.conf import settings
 from django.contrib.messages.storage import default_storage
+from django.utils import timezone
+from django.utils.html import escape
+
+from oauth2_provider.models import get_access_token_model, get_application_model
 
 from froide.publicbody.models import PublicBody
 from froide.foirequest.models import FoiRequest, FoiMessage
 from froide.foirequest.tests import factories
 
-
-from .models import AccountManager
+from .services import AccountService
 from .utils import merge_accounts
 from .admin import UserAdmin
 
 User = get_user_model()
+Application = get_application_model()
+AccessToken = get_access_token_model()
 
 
 class AccountTest(TestCase):
@@ -33,11 +40,34 @@ class AccountTest(TestCase):
         factories.make_world()
 
     def test_account_page(self):
-        ok = self.client.login(username='sw', password='wrong')
+        ok = self.client.login(email='info@fragdenstaat.de', password='wrong')
         self.assertFalse(ok)
-        ok = self.client.login(username='sw', password='froide')
+        ok = self.client.login(email='info@fragdenstaat.de', password='froide')
         self.assertTrue(ok)
         response = self.client.get(reverse('account-show'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_account_drafts(self):
+        response = self.client.get(reverse('account-drafts'))
+        self.assertEqual(response.status_code, 302)
+        ok = self.client.login(email='info@fragdenstaat.de', password='froide')
+        self.assertTrue(ok)
+
+        user = User.objects.get(email='info@fragdenstaat.de')
+        draft = factories.RequestDraftFactory.create(user=user)
+
+        response = self.client.get(reverse('account-drafts'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, draft.subject)
+        self.assertContains(response, escape(draft.get_absolute_url()))
+
+    def test_account_following(self):
+        response = self.client.get(reverse('account-following'))
+        self.assertEqual(response.status_code, 302)
+        ok = self.client.login(email='info@fragdenstaat.de', password='froide')
+        self.assertTrue(ok)
+
+        response = self.client.get(reverse('account-following'))
         self.assertEqual(response.status_code, 200)
 
     def test_login_page(self):
@@ -50,17 +80,17 @@ class AccountTest(TestCase):
                 "password": "foobar"})
         self.assertEqual(response.status_code, 400)
         response = self.client.post(reverse('account-login'),
-                {"email": "mail@stefanwehrmeyer.com",
+                {"email": "info@fragdenstaat.de",
                 "password": "dummy"})
         self.assertEqual(response.status_code, 400)
         response = self.client.post(reverse('account-login'),
-                {"email": "mail@stefanwehrmeyer.com",
+                {"email": "info@fragdenstaat.de",
                 "password": "froide"})
         self.assertEqual(response.status_code, 302)
         response = self.client.get(reverse('account-show'))
         self.assertEqual(response.status_code, 200)
         response = self.client.post(reverse('account-login'),
-                {"email": "mail@stefanwehrmeyer.com",
+                {"email": "info@fragdenstaat.de",
                 "password": "froide"})
         # already logged in, login again gives 302
         self.assertEqual(response.status_code, 302)
@@ -73,16 +103,16 @@ class AccountTest(TestCase):
         self.assertIn("simple_base.html", map(lambda x: x.name,
                 response.templates))
         response = self.client.post(reverse('account-login') + "?simple",
-                {"email": "mail@stefanwehrmeyer.com",
+                {"email": "info@fragdenstaat.de",
                 "password": "froide"})
         self.assertTrue(response.status_code, 302)
         self.assertIn("simple", response.url)
-        user = User.objects.get(email="mail@stefanwehrmeyer.com")
+        user = User.objects.get(email="info@fragdenstaat.de")
         user.is_active = False
         user.save()
         self.client.logout()
         response = self.client.post(reverse('account-login'),
-                {"email": "mail@stefanwehrmeyer.com",
+                {"email": "info@fragdenstaat.de",
                 "password": "froide"})
         # inactive users can't login
         self.assertEqual(response.status_code, 400)
@@ -99,7 +129,7 @@ class AccountTest(TestCase):
                 "terms": "on",
                 "newsletter": "on",
                 "user_email": "horst.porst"}
-        self.client.login(username='sw', password='froide')
+        self.client.login(email='info@fragdenstaat.de', password='froide')
         response = self.client.post(reverse('account-signup'), post)
         self.assertTrue(response.status_code, 302)
         self.assertEqual(len(mail.outbox), 0)
@@ -127,7 +157,7 @@ class AccountTest(TestCase):
 
         # sign up with email that is confirmed
         message = mail.outbox[0]
-        match = re.search('/%d/(\w+)/' % user.pk, message.body)
+        match = re.search(r'/%d/(\w+)/' % user.pk, message.body)
         response = self.client.get(reverse('account-confirm',
                 kwargs={'user_id': user.pk,
                 'secret': match.group(1)}))
@@ -174,13 +204,13 @@ class AccountTest(TestCase):
 
     def test_confirmation_process(self):
         self.client.logout()
-        user, password = AccountManager.create_user(first_name=u"Stefan",
-                last_name=u"Wehrmeyer", user_email="sw@example.com",
-                address=u"SomeRandomAddress\n11234 Bern", private=True)
-        AccountManager(user).send_confirmation_mail(password=password)
+        user, password = AccountService.create_user(first_name="Stefan",
+                last_name="Wehrmeyer", user_email="sw@example.com",
+                address="SomeRandomAddress\n11234 Bern", private=True)
+        AccountService(user).send_confirmation_mail(password=password)
         self.assertEqual(len(mail.outbox), 1)
         message = mail.outbox[0]
-        match = re.search('/%d/(\w+)/' % user.pk, message.body)
+        match = re.search(r'/%d/(\w+)/' % user.pk, message.body)
         response = self.client.get(reverse('account-confirm',
                 kwargs={'user_id': user.pk,
                 'secret': match.group(1)}))
@@ -206,7 +236,7 @@ class AccountTest(TestCase):
         user.is_active = False
         # set last_login back artificially so it's not the same
         # as in secret link
-        user.last_login = user.last_login - datetime.timedelta(seconds=10)
+        user.last_login = user.last_login - timedelta(seconds=10)
         user.save()
         response = self.client.get(reverse('account-confirm',
                 kwargs={'user_id': user.pk,
@@ -223,7 +253,7 @@ class AccountTest(TestCase):
         # occurences in hidden inputs of login, signup and forgotten password
         self.assertTrue(response.content.decode('utf-8').count(url), 3)
         response = self.client.post(reverse('account-login'),
-                {"email": "mail@stefanwehrmeyer.com",
+                {"email": "info@fragdenstaat.de",
                 'next': url,
                 "password": "froide"})
         self.assertEqual(response.status_code, 302)
@@ -246,7 +276,7 @@ class AccountTest(TestCase):
         self.assertTrue(response.status_code, 302)
         user = User.objects.get(email=post['user_email'])
         message = mail.outbox[0]
-        match = re.search('/%d/(\w+)/' % user.pk, message.body)
+        match = re.search(r'/%d/(\w+)/' % user.pk, message.body)
         response = self.client.get(reverse('account-confirm',
                 kwargs={'user_id': user.pk,
                 'secret': match.group(1)}))
@@ -260,23 +290,23 @@ class AccountTest(TestCase):
                 "new_password2": "froide2"}
         response = self.client.post(reverse('account-change_password'), data)
         self.assertEqual(response.status_code, 403)
-        ok = self.client.login(username='sw', password='froide')
+        ok = self.client.login(email='info@fragdenstaat.de', password='froide')
         response = self.client.post(reverse('account-change_password'), data)
         self.assertEqual(response.status_code, 400)
         data["new_password2"] = "froide1"
         response = self.client.post(reverse('account-change_password'), data)
         self.assertEqual(response.status_code, 302)
         self.client.logout()
-        ok = self.client.login(username='sw', password='froide')
+        ok = self.client.login(email='info@fragdenstaat.de', password='froide')
         self.assertFalse(ok)
-        ok = self.client.login(username='sw', password='froide1')
+        ok = self.client.login(email='info@fragdenstaat.de', password='froide1')
         self.assertTrue(ok)
 
     def test_send_reset_password_link(self):
         mail.outbox = []
         response = self.client.get(reverse('account-send_reset_password_link'))
         self.assertEqual(response.status_code, 405)
-        ok = self.client.login(username='sw', password='froide')
+        ok = self.client.login(email='info@fragdenstaat.de', password='froide')
         data = {"email": "unknown@example.com"}
         response = self.client.post(reverse('account-send_reset_password_link'))
         self.assertEqual(response.status_code, 302)
@@ -285,11 +315,11 @@ class AccountTest(TestCase):
         response = self.client.post(reverse('account-send_reset_password_link'), data)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(len(mail.outbox), 0)
-        data['email'] = 'mail@stefanwehrmeyer.com'
+        data['email'] = 'info@fragdenstaat.de'
         response = self.client.post(reverse('account-send_reset_password_link'), data)
         self.assertEqual(response.status_code, 302)
         message = mail.outbox[0]
-        match = re.search('/account/reset/([^/]+)/([^/]+)/', message.body)
+        match = re.search(r'/account/reset/([^/]+)/([^/]+)/', message.body)
         uidb64 = match.group(1)
         token = match.group(2)
         response = self.client.get(reverse('account-password_reset_confirm',
@@ -297,20 +327,18 @@ class AccountTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context['validlink'])
         response = self.client.get(reverse('account-password_reset_confirm',
-            kwargs={"uidb64": uidb64, "token": token}))
+            kwargs={"uidb64": uidb64, "token": token}), follow=True)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context['validlink'])
         data = {"new_password1": "froide4",
                 "new_password2": "froide4"}
-        response = self.client.post(reverse('account-password_reset_confirm',
-            kwargs={"uidb64": uidb64, "token": token}), data)
+        response = self.client.post(response.wsgi_request.path, data)
         self.assertEqual(response.status_code, 302)
         # we are already logged in after redirect
-        # due to extra magic in wrapping view
         response = self.client.get(reverse('account-show'))
         self.assertEqual(response.status_code, 200)
         self.client.logout()
-        ok = self.client.login(username='sw', password='froide4')
+        ok = self.client.login(email='info@fragdenstaat.de', password='froide4')
         self.assertTrue(ok)
 
     def test_next_password_reset(self):
@@ -318,24 +346,22 @@ class AccountTest(TestCase):
         mes = FoiMessage.objects.all()[0]
         url = mes.get_absolute_url()
         data = {
-            'email': 'mail@stefanwehrmeyer.com',
+            'email': 'info@fragdenstaat.de',
             'next': url
         }
         response = self.client.post(reverse('account-send_reset_password_link'), data)
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.url.endswith(url))
         message = mail.outbox[0]
-        match = re.search('/account/reset/([^/]+)/([^/]+)/', message.body)
+        match = re.search(r'/account/reset/([^/]+)/([^/]+)/', message.body)
         uidb64 = match.group(1)
         token = match.group(2)
         response = self.client.get(reverse('account-password_reset_confirm',
-            kwargs={"uidb64": uidb64, "token": token}))
+            kwargs={"uidb64": uidb64, "token": token}), follow=True)
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.context['validlink'])
         data = {"new_password1": "froide4",
                 "new_password2": "froide4"}
-        response = self.client.post(reverse('account-password_reset_confirm',
-            kwargs={"uidb64": uidb64, "token": token}), data)
+        response = self.client.post(response.wsgi_request.path, data)
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.url.endswith(url))
 
@@ -343,14 +369,15 @@ class AccountTest(TestCase):
         user = User.objects.get(username="dummy")
         user.private = True
         user.save()
-        self.client.login(username='dummy', password='froide')
+        self.client.login(email='dummy@example.org', password='froide')
         pb = PublicBody.objects.all()[0]
         post = {"subject": "Request - Private name",
                 "body": "This is a test body",
                 "public": "on",
+                "publicbody": pb.pk,
                 "law": pb.default_law.pk}
-        response = self.client.post(reverse('foirequest-submit_request',
-                kwargs={"public_body": pb.slug}), post)
+        response = self.client.post(reverse('foirequest-make_request',
+                kwargs={"publicbody_slug": pb.slug}), post)
         self.assertEqual(response.status_code, 302)
         req = FoiRequest.objects.filter(user=user, public_body=pb).order_by("-id")[0]
         self.client.logout()  # log out to remove Account link
@@ -368,7 +395,7 @@ class AccountTest(TestCase):
         response = self.client.post(reverse('account-change_user'), data)
         self.assertEqual(response.status_code, 403)
 
-        ok = self.client.login(username='sw', password='froide')
+        ok = self.client.login(email='info@fragdenstaat.de', password='froide')
         self.assertTrue(ok)
         response = self.client.post(reverse('account-change_user'), data)
         self.assertEqual(response.status_code, 400)
@@ -398,7 +425,7 @@ class AccountTest(TestCase):
         self.client.logout()
 
         # Try logging in via link: other user is authenticated
-        ok = self.client.login(username='sw', password='froide')
+        ok = self.client.login(email='info@fragdenstaat.de', password='froide')
         self.assertTrue(ok)
         autologin = user.get_autologin_url(test_url)
         response = self.client.get(autologin)
@@ -464,7 +491,7 @@ class AccountTest(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(len(mail.outbox), 0)
 
-        self.client.login(username='sw', password='froide')
+        self.client.login(email='info@fragdenstaat.de', password='froide')
 
         response = self.client.post(reverse('account-change_user'),
             {
@@ -536,7 +563,7 @@ class AccountTest(TestCase):
         self.assertEqual(response.status_code, 403)
 
         user = User.objects.get(username='sw')
-        self.client.login(username='sw', password='froide')
+        self.client.login(email='info@fragdenstaat.de', password='froide')
 
         response = self.client.get(reverse('account-settings'))
         self.assertEqual(response.status_code, 200)
@@ -568,7 +595,7 @@ class AccountTest(TestCase):
         user = User.objects.get(pk=user.pk)
         self.assertEqual(user.first_name, '')
         self.assertEqual(user.last_name, '')
-        self.assertEqual(user.email, '')
+        self.assertIsNone(user.email)
         self.assertEqual(user.username, 'u%s' % user.pk)
         self.assertEqual(user.address, '')
         self.assertEqual(user.organization, '')
@@ -582,8 +609,8 @@ class AccountTest(TestCase):
         from froide.foirequestfollower.tests import FoiRequestFollowerFactory
 
         new_user = factories.UserFactory.create()
-        new_req = factories.FoiRequestFactory.create()
         req = FoiRequest.objects.all()[0]
+        new_req = factories.FoiRequestFactory.create()
         old_user = req.user
         FoiRequestFollowerFactory.create(
             user=new_user,
@@ -648,3 +675,77 @@ class AdminActionTest(TestCase):
         self.assertIn('|%s|' % user.first_name, message.body)
         self.assertIn('|%s|' % user.last_name, message.body)
         self.assertIn('^%s|' % user.get_full_name(), message.body)
+
+
+class ApiTest(TestCase):
+    def setUp(self):
+        factories.make_world()
+        self.test_user = User.objects.get(username='dummy')
+        self.dev_user = User.objects.create_user("dev@example.com", "dev_user", "123456")
+
+        self.application = Application.objects.create(
+            name="Test Application",
+            redirect_uris="http://localhost http://example.com http://example.org",
+            user=self.dev_user,
+            client_type=Application.CLIENT_CONFIDENTIAL,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+        )
+
+        self.access_token = AccessToken.objects.create(
+            user=self.test_user,
+            scope="read:user",
+            expires=timezone.now() + timedelta(seconds=300),
+            token="secret-access-token-key",
+            application=self.application
+        )
+        self.profile_url = reverse('api-user-profile')
+
+    def _create_authorization_header(self, token):
+        return "Bearer {0}".format(token)
+
+    def test_authentication_logged_in(self):
+        self.client.login(email=self.test_user, password='froide')
+        response = self.client.get(self.profile_url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_authentication_not_loggedin(self):
+        response = self.client.get(self.profile_url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_authentication_empty_scope(self):
+        self.access_token.scope = ""
+        self.access_token.save()
+
+        auth = self._create_authorization_header(self.access_token.token)
+        response = self.client.get(self.profile_url, HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 403)
+
+    def test_authentication_user_scope(self):
+        auth = self._create_authorization_header(self.access_token.token)
+        response = self.client.get(self.profile_url, HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '"id":%d' % self.test_user.pk)
+        self.assertNotContains(response, self.test_user.email)
+        self.assertNotContains(response, self.test_user.first_name)
+
+    def test_authentication_profile_scope(self):
+        self.access_token.scope = "read:user read:profile"
+        self.access_token.save()
+        auth = self._create_authorization_header(self.access_token.token)
+        response = self.client.get(self.profile_url, HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '"id":%d' % self.test_user.pk)
+        self.assertNotContains(response, self.test_user.email)
+        self.assertContains(response, self.test_user.first_name)
+        self.assertContains(response, self.test_user.last_name)
+
+    def test_authentication_email_scope(self):
+        self.access_token.scope = "read:user read:profile read:email"
+        self.access_token.save()
+        auth = self._create_authorization_header(self.access_token.token)
+        response = self.client.get(self.profile_url, HTTP_AUTHORIZATION=auth)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '"id":%d' % self.test_user.pk)
+        self.assertContains(response, self.test_user.email)
+        self.assertContains(response, self.test_user.first_name)
+        self.assertContains(response, self.test_user.last_name)

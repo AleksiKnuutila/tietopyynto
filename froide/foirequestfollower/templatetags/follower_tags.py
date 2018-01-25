@@ -5,14 +5,22 @@ from froide.foirequestfollower.forms import FollowRequestForm
 register = template.Library()
 
 
-def followrequest(context, foirequest, user, name):
-    form = FollowRequestForm(foirequest, user)
+def get_context(foirequest, request, **kwargs):
+    form = FollowRequestForm(foirequest, request)
     following = False
-    if user.is_authenticated:
-        if foirequest.followed_by(user):
-            following = True
-    form.following = following
-    context[name] = form
-    return ""
+    user = request.user
+    if user.is_authenticated and foirequest.followed_by(user):
+        following = True
+    context = {
+        'form': form,
+        'object': foirequest,
+        'following': following
+    }
+    context.update(kwargs)
+    return context
 
-register.simple_tag(takes_context=True)(followrequest)
+
+@register.inclusion_tag('foirequestfollower/_follow_form.html')
+def follow_request_form(foirequest, request, follow_only=False, verbose=True):
+    return get_context(foirequest, request, follow_only=follow_only,
+                       verbose=verbose)

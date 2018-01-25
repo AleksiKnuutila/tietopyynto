@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
 import json
 from datetime import timedelta
 
@@ -6,7 +8,7 @@ from django.db import models
 from django.utils.translation import ugettext_lazy as _
 from django.contrib.sites.models import Site
 from django.contrib.sites.managers import CurrentSiteManager
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.conf import settings
 from django.utils.text import Truncator
 from django.utils.safestring import mark_safe
@@ -17,13 +19,13 @@ from django.utils.encoding import python_2_unicode_compatible
 from taggit.managers import TaggableManager
 from taggit.models import TagBase, ItemBase
 from taggit.utils import edit_string_for_tags
+from treebeard.mp_tree import MP_Node, MP_NodeManager
 
 from froide.helper.date_utils import (
     calculate_workingday_range,
     calculate_month_range_de
 )
 from froide.helper.templatetags.markup import markdown
-from froide.helper.form_generator import FormGenerator
 from froide.helper.csv_utils import export_csv
 
 
@@ -59,7 +61,7 @@ class Jurisdiction(models.Model):
             kwargs={'slug': self.slug})
 
     def get_absolute_domain_url(self):
-        return u"%s%s" % (settings.SITE_URL, self.get_absolute_url())
+        return "%s%s" % (settings.SITE_URL, self.get_absolute_url())
 
 
 @python_2_unicode_compatible
@@ -88,7 +90,7 @@ class FoiLaw(models.Model):
                 ('month_de', _('Month(s) (DE)')),
             ))
     refusal_reasons = models.TextField(
-            _(u"Possible Refusal Reasons, one per line, e.g §X.Y: Privacy Concerns"),
+            _("Possible Refusal Reasons, one per line, e.g §X.Y: Privacy Concerns"),
             blank=True)
     mediator = models.ForeignKey('PublicBody', verbose_name=_("Mediator"),
             null=True, blank=True,
@@ -104,27 +106,13 @@ class FoiLaw(models.Model):
         verbose_name_plural = _("Freedom of Information Laws")
 
     def __str__(self):
-        return u"%s (%s)" % (self.name, self.jurisdiction)
+        return "%s (%s)" % (self.name, self.jurisdiction)
 
     def get_absolute_url(self):
         return reverse('publicbody-foilaw-show', kwargs={'slug': self.slug})
 
     def get_absolute_domain_url(self):
-        return u"%s%s" % (settings.SITE_URL, self.get_absolute_url())
-
-    @property
-    def letter_start_form(self):
-        return mark_safe(FormGenerator(self.letter_start).render_html())
-
-    @property
-    def letter_end_form(self):
-        return mark_safe(FormGenerator(self.letter_end).render_html())
-
-    def get_letter_start_text(self, post):
-        return FormGenerator(self.letter_start, post).render()
-
-    def get_letter_end_text(self, post):
-        return FormGenerator(self.letter_end, post).render()
+        return "%s%s" % (settings.SITE_URL, self.get_absolute_url())
 
     @property
     def request_note_html(self):
@@ -162,18 +150,17 @@ class FoiLaw(models.Model):
         except FoiLaw.DoesNotExist:
             return None
 
-    def as_dict(self):
+    def as_data(self):
         return {
-            "pk": self.pk, "name": self.name,
+            "id": self.id, "name": self.name,
             "description_html": self.description_html,
             "request_note_html": self.request_note_html,
             "description": self.description,
             "letter_start": self.letter_start,
             "letter_end": self.letter_end,
-            "letter_start_form": self.letter_start_form,
-            "letter_end_form": self.letter_end_form,
-            "jurisdiction": self.jurisdiction.name,
-            "jurisdiction_id": self.jurisdiction.id,
+            "jurisdiction": self.jurisdiction.name if self.jurisdiction else '',
+            "jurisdiction_id": (self.jurisdiction.id
+                                if self.jurisdiction else None),
             "email_only": self.email_only
         }
 
@@ -229,11 +216,78 @@ class TaggedPublicBody(ItemBase):
         }).distinct()
 
 
+class CategoryManager(MP_NodeManager):
+    def get_category_list(self):
+        count = models.Count('categorized_publicbodies')
+        return (self.get_queryset().filter(depth=1, is_topic=True)
+            .order_by('name')
+            .annotate(num_publicbodies=count)
+        )
+
+
+class Category(TagBase, MP_Node):
+    is_topic = models.BooleanField(_('as topic'), default=False)
+
+    node_order_by = ['name']
+    objects = CategoryManager()
+
+    class Meta:
+        verbose_name = _("category")
+        verbose_name_plural = _("categories")
+
+    def save(self, *args, **kwargs):
+        if self.pk is None and kwargs.get('force_insert'):
+            obj = Category.add_root(
+                name=self.name,
+                slug=self.slug,
+                is_topic=self.is_topic
+            )
+            self.pk = obj.pk
+        else:
+            TagBase.save(self, *args, **kwargs)
+
+
+class CategorizedPublicBody(ItemBase):
+    tag = models.ForeignKey(Category, on_delete=models.CASCADE,
+                            related_name="categorized_publicbodies")
+    content_object = models.ForeignKey('PublicBody', on_delete=models.CASCADE)
+
+    class Meta:
+        verbose_name = _('Categorized Public Body')
+        verbose_name_plural = _('Categorized Public Bodies')
+
+    @classmethod
+    def tags_for(cls, model, instance=None):
+        if instance is not None:
+            return cls.tag_model().objects.filter(**{
+                '%s__content_object' % cls.tag_relname(): instance
+            })
+        return cls.tag_model().objects.filter(**{
+            '%s__content_object__isnull' % cls.tag_relname(): False
+        }).distinct()
+
+
+@python_2_unicode_compatible
+class Classification(MP_Node):
+    name = models.CharField(_("name"), max_length=255)
+    slug = models.SlugField(_("slug"), max_length=255)
+
+    node_order_by = ['name']
+
+    class Meta:
+        verbose_name = _("classification")
+        verbose_name_plural = _("classifications")
+
+    def __str__(self):
+        return self.name
+
+
 class PublicBodyManager(CurrentSiteManager):
     def get_queryset(self):
-        return super(PublicBodyManager, self).get_queryset()\
-                .exclude(email="")\
+        return (super(PublicBodyManager, self).get_queryset()
+                .exclude(email='')
                 .filter(email__isnull=False)
+        )
 
     def get_list(self):
         return self.get_queryset()\
@@ -251,6 +305,7 @@ class PublicBody(models.Model):
     slug = models.SlugField(_("Slug"), max_length=255)
     description = models.TextField(_("Description"), blank=True)
     url = models.URLField(_("URL"), null=True, blank=True, max_length=500)
+
     parent = models.ForeignKey('PublicBody', null=True, blank=True,
             default=None, on_delete=models.SET_NULL,
             related_name="children")
@@ -258,10 +313,9 @@ class PublicBody(models.Model):
             default=None, on_delete=models.SET_NULL,
             related_name="descendants")
     depth = models.SmallIntegerField(default=0)
-    classification = models.CharField(_("Classification"), max_length=255,
-            blank=True)
-    classification_slug = models.SlugField(_("Classification Slug"), max_length=255,
-            blank=True)
+
+    classification = models.ForeignKey(Classification, null=True, blank=True,
+        on_delete=models.SET_NULL)
 
     email = models.EmailField(_("Email"), null=True, blank=True)
     contact = models.TextField(_("Contact"), blank=True)
@@ -295,6 +349,11 @@ class PublicBody(models.Model):
     laws = models.ManyToManyField(FoiLaw,
             verbose_name=_("Freedom of Information Laws"))
     tags = TaggableManager(through=TaggedPublicBody, blank=True)
+    categories = TaggableManager(
+        through=CategorizedPublicBody,
+        verbose_name=_("categories"),
+        blank=True
+    )
 
     non_filtered_objects = models.Manager()
     objects = PublicBodyManager()
@@ -305,12 +364,12 @@ class PublicBody(models.Model):
         verbose_name = _("Public Body")
         verbose_name_plural = _("Public Bodies")
 
-    serializable_fields = ('name', 'slug', 'request_note_html',
+    serializable_fields = ('id', 'name', 'slug', 'request_note_html',
             'description', 'url', 'email', 'contact',
-            'address', 'domain')
+            'address', 'domain', 'number_of_requests')
 
     def __str__(self):
-        return u"%s (%s)" % (self.name, self.jurisdiction)
+        return "%s (%s)" % (self.name, self.jurisdiction)
 
     @property
     def created_by(self):
@@ -322,9 +381,16 @@ class PublicBody(models.Model):
 
     @property
     def domain(self):
-        if self.url:
+        if self.url and self.url.count('/') > 1:
             return self.url.split("/")[2]
         return None
+
+    @property
+    def all_names(self):
+        names = [self.name, self.other_names]
+        if self.jurisdiction:
+            names.extend([self.jurisdiction.name, self.jurisdiction.slug])
+        return ' '.join(names)
 
     @property
     def request_note_html(self):
@@ -342,10 +408,16 @@ class PublicBody(models.Model):
         return reverse('publicbody-show', kwargs={"slug": self.slug})
 
     def get_absolute_domain_url(self):
-        return u"%s%s" % (settings.SITE_URL, self.get_absolute_url())
+        return "%s%s" % (settings.SITE_URL, self.get_absolute_url())
+
+    def get_mediator(self):
+        law = self.default_law
+        if law is None:
+            return None
+        return law.mediator
 
     def get_label(self):
-        return mark_safe('%(name)s - <a href="%(url)s" class="target-new info-link">%(detail)s</a>' % {"name": escape(self.name), "url": self.get_absolute_url(), "detail": _("More Info")})
+        return mark_safe('%(name)s - <a href="%(url)s" target="_blank" class="info-link">%(detail)s</a>' % {"name": escape(self.name), "url": self.get_absolute_url(), "detail": _("More Info")})
 
     def confirm(self):
         if self.confirmed:
@@ -358,13 +430,19 @@ class PublicBody(models.Model):
                 counter += 1
         return counter
 
-    def as_json(self):
+    def as_data(self):
         d = {}
         for field in self.serializable_fields:
             d[field] = getattr(self, field)
-        d['laws'] = [self.default_law.as_dict()]
-        d['jurisdiction'] = self.jurisdiction.name
-        return json.dumps(d)
+        d['default_law'] = self.default_law.as_data()
+        d['jurisdiction'] = {
+            'name': self.jurisdiction.name,
+            'id': self.jurisdiction.id
+        }
+        return d
+
+    def as_json(self):
+        return json.dumps(self.as_data())
 
     @property
     def children_count(self):

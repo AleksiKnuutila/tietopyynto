@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 from django.db.models import signals
 from django.dispatch import receiver
 from django.core.mail import send_mail
@@ -7,7 +9,9 @@ from django.utils.translation import ugettext_lazy as _
 
 from haystack.utils import get_identifier
 
-from .models import FoiRequest, FoiMessage, FoiAttachment, FoiEvent
+from froide.helper.document import can_convert_to_pdf
+
+from .models import FoiRequest, FoiMessage, FoiAttachment, FoiEvent, FoiProject
 
 
 def trigger_index_update(klass, instance_pk):
@@ -26,7 +30,7 @@ def send_notification_became_overdue(sender, **kwargs):
         return
     if not sender.user.email:
         return
-    send_mail(u'{0} [#{1}]'.format(
+    send_mail('{0} [#{1}]'.format(
                 _("%(site_name)s: Request became overdue") % {
                     "site_name": settings.SITE_NAME
                 },
@@ -47,7 +51,7 @@ def send_notification_became_asleep(sender, **kwargs):
         return
     if not sender.user.email:
         return
-    send_mail(u'{0} [#{1}]'.format(
+    send_mail('{0} [#{1}]'.format(
                 _("%(site_name)s: Request became asleep") % {
                     "site_name": settings.SITE_NAME
                 },
@@ -70,7 +74,7 @@ def notify_user_message_received(sender, message=None, **kwargs):
         return
     if not sender.user.email:
         return
-    send_mail(u'{0} [#{1}]'.format(
+    send_mail('{0} [#{1}]'.format(
                 _("%(site_name)s: New reply to your request") % {
                     "site_name": settings.SITE_NAME
                 },
@@ -91,7 +95,7 @@ def notify_user_message_received(sender, message=None, **kwargs):
         dispatch_uid="notify_user_public_body_suggested")
 def notify_user_public_body_suggested(sender, suggestion=None, **kwargs):
     if sender.user != suggestion.user:
-        send_mail(u'{0} [#{1}]'.format(
+        send_mail('{0} [#{1}]'.format(
                     _("%(site_name)s: New suggestion for a Public Body") % {
                         "site_name": settings.SITE_NAME
                     },
@@ -124,29 +128,46 @@ def set_last_message_date_on_message_received(sender, message=None, **kwargs):
         sender.save()
 
 
+def send_request_notification_email(sender, subject, template, message=None):
+    subject = subject % {"site_name": settings.SITE_NAME}
+    if isinstance(sender, FoiRequest):
+        subject = '{0} [#{1}]'.format(subject, sender.pk)
+    send_mail(
+        subject,
+        render_to_string(template, {
+            "request": sender,
+            "message": message,
+            "site_name": settings.SITE_NAME
+        }),
+        settings.DEFAULT_FROM_EMAIL,
+        [sender.user.email]
+    )
+
+
+@receiver(FoiProject.project_created,
+        dispatch_uid="send_foiproject_created_confirmation")
+def send_foiproject_created_confirmation(sender, **kwargs):
+    subject = _("%(site_name)s: Your Freedom of Information Project has been created")
+    template = "foirequest/emails/confirm_foi_project_created.txt"
+    send_request_notification_email(sender, subject, template)
+
+
 @receiver(FoiRequest.message_sent,
         dispatch_uid="send_foimessage_sent_confirmation")
 def send_foimessage_sent_confirmation(sender, message=None, **kwargs):
     messages = sender.get_messages()
     if len(messages) == 1:
+        if sender.project_id is not None:
+            return
         subject = _("%(site_name)s: Your Freedom of Information Request was sent")
         template = "foirequest/emails/confirm_foi_request_sent.txt"
     else:
         subject = _("%(site_name)s: Your Message was sent")
         template = "foirequest/emails/confirm_foi_message_sent.txt"
-    subject = subject % {"site_name": settings.SITE_NAME}
-    send_mail(u'{0} [#{1}]'.format(subject, sender.pk),
-            render_to_string(template, {
-                "request": sender,
-                "message": message,
-                "site_name": settings.SITE_NAME
-            }),
-            settings.DEFAULT_FROM_EMAIL,
-            [sender.user.email])
+    send_request_notification_email(sender, subject, template, message=message)
 
 
 # Updating same_as foirequest count
-
 @receiver(signals.post_save, sender=FoiRequest,
         dispatch_uid="foirequest_add_up_sameascount")
 def foirequest_add_same_as_count(instance=None, created=False, **kwargs):
@@ -311,7 +332,6 @@ def foiattachment_convert_attachment(instance=None, created=False, **kwargs):
 
     from .tasks import convert_attachment_task
 
-    if (instance.filetype in FoiAttachment.CONVERTABLE_FILETYPES or
-            instance.name.endswith(FoiAttachment.CONVERTABLE_FILETYPES)):
+    if can_convert_to_pdf(instance.filetype, name=instance.name):
         if instance.converted_id is None:
             convert_attachment_task.delay(instance.id)

@@ -1,72 +1,59 @@
-import floppyforms as forms
+from __future__ import unicode_literals
 
-from django.core.urlresolvers import reverse
+from django import forms
 from django.utils.safestring import mark_safe
 
-from django.forms.widgets import TextInput
 from django.conf import settings
 from django.utils import six
-from django.utils.translation import ugettext_lazy as _
+from django.utils.html import escape
 
-from taggit.utils import edit_string_for_tags
+from taggit.utils import edit_string_for_tags, parse_tags
+
+
+class BootstrapChoiceMixin(object):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('attrs', {})
+        kwargs['attrs'].update({'class': 'form-check-input'})
+        super(BootstrapChoiceMixin, self).__init__(*args, **kwargs)
+
+
+class BootstrapCheckboxInput(BootstrapChoiceMixin, forms.CheckboxInput):
+    pass
+
+
+class BootstrapRadioSelect(BootstrapChoiceMixin, forms.RadioSelect):
+    option_template_name = 'helper/forms/widgets/radio_option.html'
 
 
 class PriceInput(forms.TextInput):
-    template_name = "bootstrap/price_input.html"
+    template_name = "helper/forms/widgets/price_input.html"
 
     def get_context(self, name, value, attrs):
         ctx = super(PriceInput, self).get_context(name, value, attrs)
-        ctx['attrs']['class'] = 'col-xs-2'
+        ctx['widget'].setdefault('attrs', {})
+        ctx['widget']['attrs']['class'] = 'form-control col-3'
+        ctx['currency'] = settings.FROIDE_CONFIG['currency']
         return ctx
 
 
-class AgreeCheckboxInput(forms.CheckboxInput):
-    def __init__(self, attrs=None, check_test=bool, agree_to="", url_names=None):
-        super(AgreeCheckboxInput, self).__init__(attrs, check_test)
-        self.agree_to = agree_to
-        self.url_names = url_names
-
-    def render(self, name, value, attrs=None):
-        html = super(AgreeCheckboxInput, self).render(name, value, attrs)
-        return mark_safe(u'<label>%s %s</label>' % (html, self.agree_to %
-                dict([(k, reverse(v)) for k, v in self.url_names.items()])))
-
-
-class TagAutocompleteTagIt(TextInput):
-    """
-    From https://github.com/nemesisdesign/django-tagging-autocomplete-tag-it
-
-    Copyright (c) 2009 Ludwik Trammer
-
-    """
-
+class TagAutocompleteWidget(forms.TextInput):
     class Media:
-        # JS Base url defaults to STATIC_URL/jquery-autocomplete/
-        js_base_url = '%sjs/libs/jquery-tag-it/' % settings.STATIC_URL
-        # jQuery ui is loaded from google's CDN by default
-        jqueryui_file = '%sjs/libs/jquery-ui.min.js' % settings.STATIC_URL
 
-        # load js
         js = (
-            '%stagging_autocomplete_tagit.js' % js_base_url,
-            jqueryui_file,
-            '%sjquery.tag-it.min.js' % js_base_url,
+            'https://code.jquery.com/jquery-3.2.1.min.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.4/js/select2.min.js'
         )
 
-        # custom css can also be overriden in settings
-        css_list = getattr(settings, 'TAGGING_AUTOCOMPLETE_CSS', ['%scss/ui-autocomplete-tag-it.css' % js_base_url])
-        # check is a list, if is a string convert it to a list
-        if type(css_list) != list and type(css_list) == str:
-            css_list = [css_list]
+        css_list = [
+            'https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.4/css/select2.min.css'
+        ]
         css = {
             'screen': css_list
         }
 
     def __init__(self, *args, **kwargs):
-        self.max_tags = getattr(settings, 'TAGGING_AUTOCOMPLETE_MAX_TAGS', 20)
-        self.tag_filter = kwargs.pop('tag_filter', None)
         self.autocomplete_url = kwargs.pop('autocomplete_url', None)
-        super(TagAutocompleteTagIt, self).__init__(*args, **kwargs)
+        super(TagAutocompleteWidget, self).__init__(*args, **kwargs)
 
     def value_from_datadict(self, data, files, name):
         """ Force comma separation of tags by adding trailing comma """
@@ -75,50 +62,56 @@ class TagAutocompleteTagIt(TextInput):
             return None
         return val + ','
 
-    def render(self, name, value, attrs=None):
+    def render(self, name, value, attrs=None, renderer=None):
         """ Render HTML code """
+        options = ''
         if value is not None and not isinstance(value, six.string_types):
-            value = edit_string_for_tags([o.tag for o in value.select_related("tag")])
-        # django-tagging
-        case_sensitive = 'true' if not getattr(settings, 'FORCE_LOWERCASE_TAGS', False) else 'false'
-        max_tag_lentgh = getattr(settings, 'MAX_TAG_LENGTH', 50)
-        # django-tagging-autocomplete-tagit
-        autocomplete_min_length = getattr(settings, 'TAGGING_AUTOCOMPLETE_MIN_LENGTH', 3)
-        remove_confirmation = 'true' if getattr(settings, 'TAGGING_AUTOCOMPLETE_REMOVE_CONFIRMATION', True) else 'false'
-        animate = 'true' if getattr(settings, 'TAGGING_AUTOCOMPLETE_ANIMATE', True) else 'false'
-        html = super(TagAutocompleteTagIt, self).render(name, value, attrs)
-        # Subclass this field in case you need to add some custom behaviour like custom callbacks
-        js = u"""<script type="text/javascript">window.init_jQueryTagit = window.init_jQueryTagit || [];
-                window.init_jQueryTagit.push({{
-                    objectId: '{objectid}',
-                    sourceUrl: '{sourceurl}',
-                    fieldName: '{fieldname}',
-                    minLength: {minlength},
-                    removeConfirmation: {removeConfirmation},
-                    caseSensitive: {caseSensitive},
-                    animate: {animate},
-                    maxLength: {maxLength},
-                    maxTags: {maxTags},
-                    allowSpaces: true,
-                    onTagAdded  : null,
-                    onTagRemoved: null,
-                    onTagClicked: null,
-                    onMaxTagsExceeded: null,
-                    placeholderText: '{placeholderText}',
-                    kind: '{kind}'
-                }});
-            </script>""".format(
-                objectid=attrs['id'],
-                sourceurl=self.autocomplete_url() if callable(self.autocomplete_url) else self.autocomplete_url,
-                fieldname=name,
-                minlength=autocomplete_min_length,
-                removeConfirmation=remove_confirmation,
-                caseSensitive=case_sensitive,
-                animate=animate,
-                maxLength=max_tag_lentgh,
-                maxTags=self.max_tags,
-                placeholderText=_('Enter comma-separated tags here'),
-                kind=self.tag_filter or ''
+            value = [o.tag for o in value.select_related('tag')]
+            value = edit_string_for_tags(value)
+
+            options = [
+                '<option value="{value}" selected>{value}</option>'.format(
+                    value=escape(six.text_type(o))) for o in parse_tags(value)]
+            options = '\n'.join(options)
+
+        html = super(TagAutocompleteWidget, self).render(
+            name, value, attrs, renderer=renderer
         )
 
-        return mark_safe("\n".join([html, js]))
+        html = """<div style="display: none">%(input)s</div><select id="%(objectid)s_select2" name="%(objectid)s_select2" multiple>%(options)s</select>
+        <script type="text/javascript">
+            document.addEventListener('DOMContentLoaded', function() {
+                $('#%(objectid)s_select2').on('change.select2', function(e) {
+                    var tagString = $(this).select2('data').map(function(el){
+                        return '"' + el.id + '"';
+                    }).join(', ');
+                    $('#%(objectid)s').val(tagString);
+                }).select2({
+                    width: '75%%',
+                    tags: true,
+                    tokenSeparators: [',', ' '],
+                    ajax: {
+                        url: '%(sourceurl)s',
+                        data: function (params) {
+                            if (params.term.length === 0) {
+                                return null;
+                            }
+                            return { query: params.term };
+                        },
+                        processResults: function(data) {
+                            return { results: data.map(function(el) {
+                                    return { id: el, text: el }
+                                })
+                            }
+                        }
+                    }
+                })
+            });
+            </script>""" % dict(
+                input=html,
+                objectid=attrs['id'],
+                sourceurl=self.autocomplete_url,
+                options=options
+        )
+
+        return mark_safe(html)

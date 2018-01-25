@@ -1,25 +1,26 @@
+from __future__ import unicode_literals
+
 import re
 
 from django.contrib import admin
 from django.utils.translation import ugettext_lazy as _
 from django.core.exceptions import PermissionDenied
-from django.core.urlresolvers import reverse
-from django.db import router
+from django.urls import reverse, reverse_lazy
 from django.template.response import TemplateResponse
-from django.utils.safestring import mark_safe
 from django.contrib.admin import helpers
 from django.utils.six import BytesIO
-
-import floppyforms as forms
+from django import forms
 
 from froide.helper.admin_utils import (make_nullfilter, AdminTagAllMixIn,
                                       ForeignKeyFilter, TaggitListFilter)
-from froide.helper.widgets import TagAutocompleteTagIt
+from froide.helper.widgets import TagAutocompleteWidget
+from froide.helper.forms import get_fk_form_class
 from froide.helper.email_utils import EmailParser
+from froide.helper.document import can_convert_to_pdf
 
-from .models import (FoiRequest, FoiMessage,
+from .models import (FoiRequest, FoiMessage, FoiProject,
         FoiAttachment, FoiEvent, PublicBodySuggestion,
-        DeferredMessage, TaggedFoiRequest)
+        DeferredMessage, TaggedFoiRequest, RequestDraft, DeliveryStatus)
 from .tasks import count_same_foirequests, convert_attachment_task
 
 
@@ -36,11 +37,9 @@ class FoiRequestAdminForm(forms.ModelForm):
         model = FoiRequest
         fields = '__all__'
         widgets = {
-            'tags': TagAutocompleteTagIt(
-                autocomplete_url=lambda: reverse('api_get_tags_autocomplete', kwargs={
-                    'api_name': 'v1',
-                    'resource_name': 'request'}
-                )),
+            'tags': TagAutocompleteWidget(
+                autocomplete_url=reverse_lazy('api:request-tags-autocomplete')
+            ),
         }
 
 
@@ -55,25 +54,30 @@ class FoiRequestAdmin(admin.ModelAdmin, AdminTagAllMixIn):
     inlines = [
         FoiMessageInline,
     ]
-    list_display = ('title', 'first_message', 'secret_address', 'checked',
-        'public_body', 'status',)
+    list_display = ('title', 'first_message', 'secret_address', 'request_page',
+                    'public_body', 'status', 'visibility')
     list_filter = ('jurisdiction', 'first_message', 'last_message', 'status',
         'resolution', 'is_foi', 'checked', 'public', 'visibility',
         'is_blocked',
-        make_nullfilter('same_as', _(u'Has same request')),
+        make_nullfilter('same_as', _('Has same request')),
         ('user', ForeignKeyFilter), ('public_body', ForeignKeyFilter),
         FoiRequestTagsFilter)
     search_fields = ['title', 'description', 'secret_address', 'reference']
     ordering = ('-last_message',)
     date_hierarchy = 'first_message'
 
-    autocomplete_resource_name = 'request'
+    tag_all_config = ('tags', reverse_lazy('api:request-tags-autocomplete'))
 
     actions = ['mark_checked', 'mark_not_foi', 'tag_all',
                'mark_same_as', 'remove_from_index', 'confirm_request',
                'set_visible_to_user', 'unpublish']
     raw_id_fields = ('same_as', 'public_body', 'user',)
     save_on_top = True
+
+    def request_page(self, obj):
+        return '<a href="%s">%s</a>' % (
+            obj.get_absolute_url(), _('request page'))
+    request_page.allow_tags = True
 
     def mark_checked(self, request, queryset):
         rows_updated = queryset.update(checked=True)
@@ -95,30 +99,26 @@ class FoiRequestAdmin(admin.ModelAdmin, AdminTagAllMixIn):
         if not self.has_change_permission(request):
             raise PermissionDenied
 
+        Form = get_fk_form_class(self.model, 'same_as', self.admin_site)
         # User has already chosen the other req
-        if request.POST.get('req_id'):
-            try:
-                req = self.model.objects.get(id=int(request.POST.get('req_id')))
-            except (ValueError, self.model.DoesNotExist,):
-                raise PermissionDenied
-            queryset.update(same_as=req)
-            count_same_foirequests.delay(req.id)
-            self.message_user(request, _("Successfully marked requests as identical."))
-            # Return None to display the change list page again.
-            return None
+        if request.POST.get('obj'):
+            f = Form(request.POST)
+            if f.is_valid():
+                req = f.cleaned_data['obj']
+                queryset.update(same_as=req)
+                count_same_foirequests.delay(req.id)
+                self.message_user(request, _("Successfully marked requests as identical."))
+                # Return None to display the change list page again.
+                return None
+        else:
+            f = Form()
 
-        db = router.db_for_write(self.model)
         context = {
             'opts': opts,
             'queryset': queryset,
             'media': self.media,
             'action_checkbox_name': helpers.ACTION_CHECKBOX_NAME,
-            'req_widget': mark_safe(admin.widgets.ForeignKeyRawIdWidget(
-                    self.model._meta.get_field(
-                        'same_as').rel, self.admin_site, using=db).render(
-                            'req_id', None,
-                            {'id': 'id_req_id'})
-                            .replace('../../..', '../..')),
+            'form': f,
             'applabel': opts.app_label
         }
 
@@ -164,18 +164,36 @@ class FoiAttachmentInline(admin.TabularInline):
     raw_id_fields = ('redacted', 'converted')
 
 
+class DeliveryStatusInline(admin.TabularInline):
+    model = DeliveryStatus
+    extra = 0
+    max_num = 1
+    min_num = 0
+    raw_id_fields = ('message',)
+    readonly_fields = ('log', 'status', 'last_update')
+
+
 class FoiMessageAdmin(admin.ModelAdmin):
     save_on_top = True
     list_display = ('subject', 'timestamp', 'sender_email', 'recipient_email',)
-    list_filter = ('is_postal', 'is_response', 'sent', 'status',)
+    list_filter = ('is_postal', 'is_response', 'sent', 'status', 'deliverystatus__status')
     search_fields = ['subject', 'sender_email', 'recipient_email']
     ordering = ('-timestamp',)
     date_hierarchy = 'timestamp'
     exclude = ('original',)
     raw_id_fields = ('request', 'sender_user', 'sender_public_body', 'recipient_public_body')
     inlines = [
+        DeliveryStatusInline,
         FoiAttachmentInline,
     ]
+    actions = ['check_delivery_status']
+
+    def check_delivery_status(self, request, queryset):
+        from .tasks import check_delivery_status
+        for message in queryset:
+            check_delivery_status.delay(message.id)
+        self.message_user(request, _("Selected messages are being checked for delivery."))
+    check_delivery_status.short_description = _("Check delivery status")
 
 
 class FoiAttachmentAdmin(admin.ModelAdmin):
@@ -183,11 +201,17 @@ class FoiAttachmentAdmin(admin.ModelAdmin):
     ordering = ('-id',)
     list_display = ('name', 'filetype', 'admin_link_message', 'approved', 'can_approve',)
     list_filter = ('can_approve', 'approved', 'is_redacted', 'is_converted',
-                   make_nullfilter('redacted', _(u'Has redacted version')),
-                   make_nullfilter('converted', _(u'Has converted version'))
+                   make_nullfilter('redacted', _('Has redacted version')),
+                   make_nullfilter('converted', _('Has converted version'))
     )
     search_fields = ['name']
     actions = ['approve', 'cannot_approve', 'convert']
+
+    def admin_link_message(self, obj):
+        return '<a href="%s">%s</a>' % (
+            reverse('admin:foirequest_foimessage_change',
+                args=(obj.belongs_to_id,)), _('See FoiMessage'))
+    admin_link_message.allow_tags = True
 
     def approve(self, request, queryset):
         rows_updated = queryset.update(approved=True)
@@ -202,11 +226,14 @@ class FoiAttachmentAdmin(admin.ModelAdmin):
     def convert(self, request, queryset):
         if not queryset:
             return
+        count = 0
         for instance in queryset:
-            if (instance.filetype in FoiAttachment.CONVERTABLE_FILETYPES or
-                    instance.name.endswith(FoiAttachment.CONVERTABLE_FILETYPES)):
+            ft = instance.filetype.lower()
+            name = instance.name.lower()
+            if can_convert_to_pdf(ft, name=name):
+                count += 1
                 convert_attachment_task.delay(instance.pk)
-        self.message_user(request, _("Conversion tasks started."))
+        self.message_user(request, _("Conversion tasks started: %s") % count)
     convert.short_description = _("Convert to PDF")
 
 
@@ -230,20 +257,31 @@ class PublicBodySuggestionAdmin(admin.ModelAdmin):
 class DeferredMessageAdmin(admin.ModelAdmin):
     model = DeferredMessage
 
-    list_filter = (make_nullfilter('request', _(u'Has request')), 'spam')
+    list_filter = ('delivered', make_nullfilter('request', _('Has request')),
+                   'spam')
     search_fields = ['recipient']
     date_hierarchy = 'timestamp'
     ordering = ('-timestamp',)
-    list_display = ('recipient', 'timestamp', 'request', 'spam')
+    list_display = ('recipient', 'timestamp', 'spam', 'delivered',
+                    'get_email_details', 'request',)
     raw_id_fields = ('request',)
-    actions = ['redeliver', 'auto_redeliver']
+    actions = ['deliver_no_spam', 'redeliver', 'redeliver_subject']
+
+    # Reduce per page because parsing emails is heavy
+    list_per_page = 20
 
     save_on_top = True
 
-    def auto_redeliver(self, request, queryset):
+    def get_email_details(self, obj):
+        parser = EmailParser()
+        email = parser.parse(BytesIO(obj.encoded_mail()))
+        return '%s (%s...)' % (email['from'][1], email.get('subject')[:20])
+    get_email_details.short_description = _('email details')
+
+    def redeliver_subject(self, request, queryset):
         parser = EmailParser()
         for deferred in queryset:
-            email = parser.parse(BytesIO(deferred.decoded_mail()))
+            email = parser.parse(BytesIO(deferred.encoded_mail()))
             match = SUBJECT_REQUEST_ID.search(email['subject'])
             if match is not None:
                 try:
@@ -251,7 +289,17 @@ class DeferredMessageAdmin(admin.ModelAdmin):
                     deferred.redeliver(req)
                 except FoiRequest.DoesNotExist:
                     continue
-    auto_redeliver.short_description = _("Auto-Redeliver based on subject")
+    redeliver_subject.short_description = _("Auto-Redeliver based on subject")
+
+    def deliver_no_spam(self, request, queryset):
+        for deferred in queryset:
+            if deferred.request is not None:
+                deferred.spam = False
+                if deferred.delivered:
+                    deferred.save()
+                else:
+                    deferred.redeliver(deferred.request)
+    deliver_no_spam.short_description = _("Deliver and mark as no spam")
 
     def redeliver(self, request, queryset, auto=False):
         """
@@ -263,33 +311,25 @@ class DeferredMessageAdmin(admin.ModelAdmin):
         if not self.has_change_permission(request):
             raise PermissionDenied
 
+        Form = get_fk_form_class(self.model, 'request', self.admin_site)
         # User has already chosen the other req
-        if request.POST.get('req_id'):
-            req_id = int(request.POST.get('req_id'))
-            try:
-                req = FoiRequest.objects.get(id=req_id)
-            except (ValueError, FoiRequest.DoesNotExist,):
-                raise PermissionDenied
+        if request.POST.get('obj'):
+            f = Form(request.POST)
+            if f.is_valid():
+                req = f.cleaned_data['obj']
+                for deferred in queryset:
+                    deferred.redeliver(req)
+                self.message_user(request, _("Successfully triggered redelivery."))
+                return None
+        else:
+            f = Form()
 
-            for deferred in queryset:
-                deferred.redeliver(req)
-
-            self.message_user(request, _("Successfully triggered redelivery."))
-
-            return None
-
-        db = router.db_for_write(self.model)
         context = {
             'opts': opts,
             'queryset': queryset,
             'media': self.media,
             'action_checkbox_name': helpers.ACTION_CHECKBOX_NAME,
-            'req_widget': mark_safe(admin.widgets.ForeignKeyRawIdWidget(
-                    self.model._meta.get_field(
-                        'request').rel, self.admin_site, using=db).render(
-                            'req_id', None,
-                            {'id': 'id_req_id'})
-                            .replace('../../..', '../..')),
+            'form': f,
             'applabel': opts.app_label
         }
 
@@ -298,9 +338,43 @@ class DeferredMessageAdmin(admin.ModelAdmin):
             context)
     redeliver.short_description = _("Redeliver to...")
 
+
+class FoiProjectAdminForm(forms.ModelForm):
+    class Meta:
+        model = FoiProject
+        fields = '__all__'
+        widgets = {
+            'tags': TagAutocompleteWidget(
+                autocomplete_url=reverse_lazy('api:request-tags-autocomplete')
+            ),
+        }
+
+
+class FoiProjectAdmin(admin.ModelAdmin):
+    form = FoiRequestAdminForm
+
+    list_display = ('title', 'created', 'user', 'public', 'status',
+                    'request_count')
+    list_filter = ('public', 'status',)
+    search_fields = ['title', 'description', 'reference']
+    ordering = ('-last_update',)
+    date_hierarchy = 'created'
+
+
+class RequestDraftAdmin(admin.ModelAdmin):
+    list_display = ('save_date', 'user', 'subject',)
+    list_filter = ('public', 'full_text')
+    search_fields = ['subject', 'user__email']
+    ordering = ('-save_date',)
+    date_hierarchy = 'save_date'
+    raw_id_fields = ('user', 'publicbodies', 'request', 'project')
+
+
 admin.site.register(FoiRequest, FoiRequestAdmin)
 admin.site.register(FoiMessage, FoiMessageAdmin)
 admin.site.register(FoiAttachment, FoiAttachmentAdmin)
 admin.site.register(FoiEvent, FoiEventAdmin)
 admin.site.register(PublicBodySuggestion, PublicBodySuggestionAdmin)
 admin.site.register(DeferredMessage, DeferredMessageAdmin)
+admin.site.register(RequestDraft, RequestDraftAdmin)
+admin.site.register(FoiProject, FoiProjectAdmin)

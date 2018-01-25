@@ -1,21 +1,21 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.http import Http404, QueryDict
 from django.contrib import auth
+from django.contrib.auth.views import PasswordResetConfirmView
 from django.contrib import messages
 from django.utils.translation import ugettext_lazy as _
 from django.views.decorators.http import require_POST
-from django.contrib.auth.views import password_reset_confirm as django_password_reset_confirm
-from django.utils.http import urlsafe_base64_decode, is_safe_url
+from django.utils.http import is_safe_url
 from django.views.generic import ListView
 
-from froide.foirequest.models import FoiRequest, FoiEvent
-from froide.helper.auth import login_user
+from froide.foirequest.models import (FoiRequest, FoiProject, FoiEvent,
+                                      RequestDraft)
 from froide.helper.utils import render_403
 
 from .forms import (UserLoginForm, PasswordResetForm, NewUserForm,
         UserEmailConfirmationForm, UserChangeForm, UserDeleteForm, TermsForm)
-from .models import AccountManager
+from .services import AccountService
 from .utils import cancel_user
 
 
@@ -25,13 +25,13 @@ def confirm(request, user_id, secret, request_id=None):
                 _('You are logged in and cannot use a confirmation link.'))
         return redirect('account-show')
     user = get_object_or_404(auth.get_user_model(), pk=int(user_id))
-    if user.is_active:
+    if user.is_active or (not user.is_active and user.email is None):
         return redirect('account-login')
-    account_manager = AccountManager(user)
-    if account_manager.confirm_account(secret, request_id):
+    account_service = AccountService(user)
+    if account_service.confirm_account(secret, request_id):
         messages.add_message(request, messages.WARNING,
                 _('Your email address is now confirmed and you are logged in. You should change your password now by filling out the form below.'))
-        login_user(request, user)
+        auth.login(request, user)
         if request_id is not None:
             foirequest = FoiRequest.confirmed_request(user, request_id)
             if foirequest:
@@ -60,9 +60,9 @@ def go(request, user_id, secret, url):
             messages.add_message(request, messages.ERROR,
                 _('Your account is not active.'))
             raise Http404
-        account_manager = AccountManager(user)
+        account_manager = AccountService(user)
         if account_manager.check_autologin_secret(secret):
-            login_user(request, user)
+            auth.login(request, user)
     return redirect(url)
 
 
@@ -112,6 +112,33 @@ class FollowingRequestsView(BaseRequestListView):
                 foirequestfollower__user=self.request.user, **query_kwargs)
 
 
+class DraftRequestsView(BaseRequestListView):
+    template_name = 'account/show_drafts.html'
+    menu_item = 'drafts'
+
+    def get_queryset(self):
+        self.query = self.request.GET.get('q', None)
+        query_kwargs = {}
+        if self.query:
+            query_kwargs = {'subject__icontains': self.query}
+        return RequestDraft.objects.filter(
+                user=self.request.user, **query_kwargs)
+
+
+class FoiProjectListView(BaseRequestListView):
+    template_name = 'account/show_projects.html'
+    menu_item = 'projects'
+
+    def get_queryset(self):
+        self.query = self.request.GET.get('q', None)
+        query_kwargs = {}
+        if self.query:
+            query_kwargs = {'title__icontains': self.query}
+        return FoiProject.objects.get_for_user(
+            self.request.user, **query_kwargs
+        )
+
+
 def profile(request, slug):
     user = get_object_or_404(auth.get_user_model(), username=slug)
     if user.private:
@@ -133,7 +160,7 @@ def logout(request):
     return redirect("/")
 
 
-def login(request, base="base.html", context=None,
+def login(request, base="account/base.html", context=None,
         template='account/login.html', status=200):
     simple = False
     initial = None
@@ -199,9 +226,9 @@ def signup(request):
     signup_form = NewUserForm(request.POST)
     next = request.POST.get('next')
     if signup_form.is_valid():
-        user, password = AccountManager.create_user(**signup_form.cleaned_data)
+        user, password = AccountService.create_user(**signup_form.cleaned_data)
         signup_form.save(user)
-        AccountManager(user).send_confirmation_mail(password=password)
+        AccountService(user).send_confirmation_mail(password=password)
         messages.add_message(request, messages.SUCCESS,
                 _('Please check your emails for a mail from us with a confirmation link.'))
         if next:
@@ -252,27 +279,18 @@ def send_reset_password_link(request):
     return login(request, context={"reset_form": form}, status=400)
 
 
-def password_reset_confirm(request, uidb64=None, token=None):
-    # TODO: Fix this code
-    # - don't sniff response
-    # - make redirect
+class CustomPasswordResetConfirmView(PasswordResetConfirmView):
+    template_name = 'account/password_reset_confirm.html'
+    post_reset_login = True
 
-    response = django_password_reset_confirm(request, uidb64=uidb64, token=token,
-            template_name='account/password_reset_confirm.html',
-            post_reset_redirect=reverse('account-show'))
-
-    if response.status_code == 302:
-        uid = urlsafe_base64_decode(uidb64)
-        user = auth.get_user_model().objects.get(pk=uid)
-        login_user(request, user)
-        messages.add_message(request, messages.SUCCESS,
-                _('Your password has been set and you are now logged in.'))
-        if 'next' in request.session and is_safe_url(
-                    url=request.session['next'],
-                    host=request.get_host()):
-            response['Location'] = request.session['next']
-            del request.session['next']
-    return response
+    def get_success_url(self):
+        """
+        Returns the supplied success URL.
+        """
+        next_url = self.request.session.get('next')
+        if next_url is not None:
+            return next_url
+        return reverse('account-show')
 
 
 def account_settings(request, context=None, status=200):
@@ -298,7 +316,7 @@ def change_user(request):
     form = UserChangeForm(request.user, request.POST)
     if form.is_valid():
         if request.user.email != form.cleaned_data['email']:
-            AccountManager(request.user).send_email_change_mail(
+            AccountService(request.user).send_email_change_mail(
                 form.cleaned_data['email']
             )
             messages.add_message(request, messages.SUCCESS,

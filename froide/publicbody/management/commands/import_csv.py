@@ -1,4 +1,6 @@
 # -*- encoding: utf-8 -*-
+from __future__ import unicode_literals
+
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import translation
@@ -22,6 +24,7 @@ class Command(BaseCommand):
         if filename.startswith('http://') or filename.startswith('https://'):
             importer.import_from_url(filename)
         else:
-            importer.import_from_file(open(filename, 'rb'))
+            with open(filename, 'rb') as f:
+                importer.import_from_file(f)
 
-        self.stdout.write(u"Import done.\n")
+        self.stdout.write("Import done.\n")

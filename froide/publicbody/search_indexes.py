@@ -9,6 +9,8 @@ try:
 except ImportError:
     SearchIndex = indexes.SearchIndex
 
+from froide.helper.search import SuggestField
+
 from .models import PublicBody
 
 PUBLIC_BODY_BOOSTS = settings.FROIDE_CONFIG.get("public_body_boosts", {})
@@ -17,10 +19,13 @@ PUBLIC_BODY_BOOSTS = settings.FROIDE_CONFIG.get("public_body_boosts", {})
 class PublicBodyIndex(SearchIndex, indexes.Indexable):
     text = indexes.EdgeNgramField(document=True, use_template=True)
     name = indexes.CharField(model_attr='name', boost=1.5)
-    name_auto = indexes.NgramField(model_attr='name')
-    jurisdiction = indexes.FacetCharField(model_attr='jurisdiction__name', default='')
-    tags = indexes.FacetMultiValueField()
-    url = indexes.CharField(model_attr='get_absolute_url')
+    name_auto = SuggestField(model_attr='all_names', boost=2.5)
+    jurisdiction = indexes.FacetCharField(
+        model_attr='jurisdiction__name',
+        default=''
+    )
+    classification = indexes.FacetMultiValueField()
+    categories = indexes.FacetMultiValueField()
 
     def get_model(self):
         return PublicBody
@@ -29,12 +34,13 @@ class PublicBodyIndex(SearchIndex, indexes.Indexable):
         """Used when the entire index for model is updated."""
         return self.get_model().objects.get_for_search_index()
 
-    def prepare_tags(self, obj):
-        return [t.name for t in obj.tags.all()]
+    def prepare_classification(self, obj):
+        if obj.classification is None:
+            return []
+        return [obj.classification.name] + [c.name for c in
+                obj.classification.get_ancestors()]
 
-    def prepare(self, obj):
-        data = super(PublicBodyIndex, self).prepare(obj)
-        if obj.classification in PUBLIC_BODY_BOOSTS:
-            data['boost'] = PUBLIC_BODY_BOOSTS[obj.classification]
-            print("Boosting %s at %f" % (obj, data['boost']))
-        return data
+    def prepare_categories(self, obj):
+        cats = obj.categories.all()
+        return [o.name for o in cats] + [
+                c.name for o in cats for c in o.get_ancestors()]

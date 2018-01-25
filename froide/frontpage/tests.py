@@ -3,7 +3,7 @@ from __future__ import with_statement
 from datetime import timedelta
 
 from django.test import TestCase
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.conf import settings
 from django.utils import translation, timezone
 
@@ -40,4 +40,4 @@ class RequestTest(TestCase):
             site=self.site)
         response = self.client.get(reverse('index') + "?bust_cache=true")
         self.assertEqual(response.status_code, 200)
-        self.assertIn(title2, response.content.decode('utf-8'))
+        self.assertContains(response, title2)

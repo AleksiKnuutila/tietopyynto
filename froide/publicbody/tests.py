@@ -1,9 +1,11 @@
+from __future__ import unicode_literals
+
 import json
 import tempfile
 
 from django.utils import six
 from django.test import TestCase
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 
 from froide.foirequest.tests import factories
 from froide.helper.csv_utils import export_csv_bytes
@@ -20,23 +22,24 @@ class PublicBodyTest(TestCase):
         response = self.client.get(reverse('publicbody-list'))
         self.assertEqual(response.status_code, 200)
         pb = PublicBody.objects.all()[0]
-        tag = pb.tags.all()[0]
+        category = factories.CategoryFactory.create()
+        pb.categories.add(category)
         response = self.client.get(reverse('publicbody-list', kwargs={
-            'topic': tag.slug
+            'topic': category.slug
         }))
         self.assertEqual(response.status_code, 200)
-        self.assertIn(pb.name, response.content.decode('utf-8'))
+        self.assertContains(response, pb.name)
         response = self.client.get(reverse('publicbody-list', kwargs={
             'jurisdiction': pb.jurisdiction.slug
         }))
         self.assertEqual(response.status_code, 200)
-        self.assertIn(pb.name, response.content.decode('utf-8'))
+        self.assertContains(response, pb.name)
         response = self.client.get(reverse('publicbody-list', kwargs={
             'jurisdiction': pb.jurisdiction.slug,
-            'topic': tag.slug
+            'topic': category.slug
         }))
         self.assertEqual(response.status_code, 200)
-        self.assertIn(pb.name, response.content.decode('utf-8'))
+        self.assertContains(response, pb.name)
         response = self.client.get(reverse('publicbody-show',
                 kwargs={"slug": pb.slug}))
         self.assertEqual(response.status_code, 200)
@@ -62,7 +65,7 @@ class PublicBodyTest(TestCase):
 
         prev_count = PublicBody.objects.all().count()
         # Existing entity via slug, no id reference
-        csv = u'''name,email,jurisdiction__slug,other_names,description,tags,url,parent__name,classification,contact,address,website_dump,request_note
+        csv = '''name,email,jurisdiction__slug,other_names,description,tags,url,parent__name,classification,contact,address,website_dump,request_note
 Public Body 76 X,pb-76@76.example.com,bund,,,public-body-topic-76-x,http://example.com,,Ministry,Some contact stuff,An address,,'''
         imp = CSVImporter()
         imp.import_from_file(six.BytesIO(csv.encode('utf-8')))
@@ -71,7 +74,7 @@ Public Body 76 X,pb-76@76.example.com,bund,,,public-body-topic-76-x,http://examp
 
     def test_csv_new_import(self):
         prev_count = PublicBody.objects.all().count()
-        csv = u'''name,email,jurisdiction__slug,other_names,description,tags,url,parent__name,classification,contact,address,website_dump,request_note
+        csv = '''name,email,jurisdiction__slug,other_names,description,tags,url,parent__name,classification,contact,address,website_dump,request_note
 Public Body X 76,pb-76@76.example.com,bund,,,,http://example.com,,Ministry,Some contact stuff,An address,,'''
         imp = CSVImporter()
         imp.import_from_file(six.BytesIO(csv.encode('utf-8')))
@@ -93,12 +96,12 @@ Public Body X 76,pb-76@76.example.com,bund,,,,http://example.com,,Ministry,Some 
         response = self.client.post(url)
         self.assertEqual(response.status_code, 403)
 
-        self.client.login(username='dummy', password='froide')
+        self.client.login(email='dummy@example.org', password='froide')
         response = self.client.post(url)
         self.assertEqual(response.status_code, 403)
 
         self.client.logout()
-        self.client.login(username='sw', password='froide')
+        self.client.login(email='info@fragdenstaat.de', password='froide')
         response = self.client.get(url)
         self.assertEqual(response.status_code, 405)
 
@@ -113,13 +116,13 @@ Public Body X 76,pb-76@76.example.com,bund,,,,http://example.com,,Ministry,Some 
         self.assertIn(law.jurisdiction.name, str(law))
         response = self.client.get(law.get_absolute_url())
         self.assertEqual(response.status_code, 200)
-        self.assertIn(law.name, response.content.decode('utf-8'))
+        self.assertContains(response, law.name)
 
     def test_show_jurisdiction(self):
         juris = Jurisdiction.objects.all()[0]
         response = self.client.get(juris.get_absolute_url())
         self.assertEqual(response.status_code, 200)
-        self.assertIn(juris.name, response.content.decode('utf-8'))
+        self.assertContains(response, juris.name)
         new_juris = factories.JurisdictionFactory.create(name='peculiar')
         response = self.client.get(new_juris.get_absolute_url())
         self.assertEqual(response.status_code, 200)
@@ -164,14 +167,13 @@ class ApiTest(TestCase):
         pb = PublicBody.objects.all()[0]
         factories.rebuild_index()
 
-        response = self.client.get('%s&query=%s' % (
-                '/api/v1/publicbody/autocomplete/?format=json', pb.name))
+        response = self.client.get('%s?q=%s' % (
+                '/api/v1/publicbody/search/', pb.name))
         self.assertEqual(response.status_code, 200)
         obj = json.loads(response.content.decode('utf-8'))
-        self.assertIn(pb.name, obj['suggestions'][0])
-        self.assertIn(pb.name, obj['data'][0]['name'])
-        response = self.client.get('%s&query=%s&jurisdiction=non_existant' % (
-                '/api/v1/publicbody/autocomplete/?format=json', pb.name))
+        self.assertIn(pb.name, obj['objects']['results'][0]['name'])
+        response = self.client.get('%s?query=%s&jurisdiction=non_existant' % (
+                '/api/v1/publicbody/search/', pb.name))
         self.assertEqual(response.status_code, 200)
         obj = json.loads(response.content.decode('utf-8'))
-        self.assertEqual(obj['suggestions'], [])
+        self.assertEqual(obj['objects']['results'], [])

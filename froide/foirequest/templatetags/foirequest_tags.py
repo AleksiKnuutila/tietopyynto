@@ -1,4 +1,6 @@
 # -*- encoding: utf-8 -*-
+from __future__ import unicode_literals
+
 from difflib import SequenceMatcher
 import re
 
@@ -10,8 +12,9 @@ from django.utils.translation import ugettext_lazy as _
 
 from froide.helper.text_utils import unescape, split_text_by_separator
 
-from froide.foirequest.models import FoiRequest
-from froide.foirequest.foi_mail import get_alternative_mail
+from ..models import FoiRequest
+from ..foi_mail import get_alternative_mail
+from ..auth import can_read_foirequest, can_write_foirequest
 
 register = template.Library()
 
@@ -25,13 +28,14 @@ def highlight_request(message):
     except ValueError:
         return content
     offset = index + len(description)
-    return mark_safe('<div class="foldin">%s</div><div class="highlight">%s</div><div class="foldin-bottom print-show" style="display:none" id="letter_end">%s</div>' % (
+    return mark_safe('<div>%s</div><div class="highlight">%s</div><div class="collapse" id="letter_end">%s</div>' % (
             escape(content[:index]),
             urlizetrunc(escape(description), 40),
             escape(content[offset:]))
     )
 
-ONLY_SPACE_LINE = re.compile(u'^[ \u00A0]+$', re.U | re.M)
+
+ONLY_SPACE_LINE = re.compile('^[ \u00A0]+$', re.U | re.M)
 
 
 def remove_space_lines(content):
@@ -39,12 +43,12 @@ def remove_space_lines(content):
 
 
 def mark_differences(content_a, content_b,
-        start_tag=u'<span{attrs}> ',
+        start_tag='<span{attrs}> ',
         end_tag=' </span>',
         attrs=None,
         min_part_len=3):
     if attrs is None:
-        attrs = u' class="redacted"'
+        attrs = ' class="redacted"'
     start_tag = start_tag.format(attrs=attrs)
     opened = False
     redact = False
@@ -87,12 +91,12 @@ def redact_message(message, user):
 
     if message.request.user == user or user.is_staff:
         content_1 = mark_differences(c_1, r_1,
-            attrs=u' class="redacted redacted-hover"'
+            attrs=' class="redacted redacted-hover"'
             ' data-toggle="tooltip" title="{title}"'.format(
                 title=_('Only visible to you')
             ))
         content_2 = mark_differences(c_2, r_2,
-            attrs=u' class="redacted redacted-hover"'
+            attrs=' class="redacted redacted-hover"'
             ' data-toggle="tooltip" title="{title}"'.format(
                 title=_('Only visible to you')
             ))
@@ -104,11 +108,14 @@ def redact_message(message, user):
     content_2 = urlizetrunc(content_2, 40, autoescape=False)
 
     if content_2:
-        return mark_safe(u''.join([
+        return mark_safe(''.join([
             content_1,
-            u'<a href="#" class="show-text">…</a><div class="hidden-text">',
+            ('<a href="#message-footer-{message_id}" data-toggle="collapse" '
+            ' aria-expanded="false" aria-controls="collapseExample">…</a>'
+            '<div id="message-footer-{message_id}" class="collapse">'
+            .format(message_id=message.id)),
             content_2,
-            u'</div>'
+            '</div>'
         ]))
 
     return mark_safe(content_1)
@@ -119,7 +126,9 @@ def check_same_request(context, foirequest, user, var_name):
         foirequest_id = foirequest.same_as_id
     else:
         foirequest_id = foirequest.id
-    same_requests = FoiRequest.objects.filter(user=user, same_as_id=foirequest_id)
+    same_requests = FoiRequest.objects.filter(
+        user=user, same_as_id=foirequest_id
+    )
     if same_requests:
         context[var_name] = same_requests[0]
     else:
@@ -127,8 +136,19 @@ def check_same_request(context, foirequest, user, var_name):
     return ""
 
 
+@register.filter(name='can_read_foirequest')
+def can_read_foirequest_filter(foirequest, request):
+    return can_read_foirequest(foirequest, request)
+
+
+@register.filter(name='can_write_foirequest')
+def can_write_foirequest_filter(foirequest, request):
+    return can_write_foirequest(foirequest, request)
+
+
 def alternative_address(foirequest):
     return get_alternative_mail(foirequest)
+
 
 register.simple_tag(highlight_request)
 register.simple_tag(redact_message)

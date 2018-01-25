@@ -1,0 +1,30 @@
+.btn {
+  cursor: pointer;
+}
+.btn .on-hover {
+    display: none;
+}
+
+.btn:hover .on-hover {
+    display: inline;
+}
+
+.btn:hover .on-display {
+    display: none;
+}
+
+.hover-btn-success {
+  @extend .btn-outline-success;
+}
+
+.hover-btn-success:hover {
+  @extend .btn-success;
+}
+
+.hover-btn-danger {
+  @extend .btn-outline-secondary;
+}
+
+.btn.hover-btn-danger:hover {
+  @extend .btn-danger;
+}

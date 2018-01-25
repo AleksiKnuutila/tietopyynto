@@ -1,30 +1,89 @@
-import hmac
+from __future__ import unicode_literals
 
-try:
-    from urllib.parse import urlencode
-except ImportError:
-    from urllib import urlencode
+import json
 
+from django.db import models
 from django.utils.six import text_type as str
-from django.db import models, transaction, IntegrityError
-from django.conf import settings
-from django import dispatch
 from django.utils.translation import ugettext_lazy as _
-from django.core.urlresolvers import reverse
-from django.template.defaultfilters import slugify
-from django.template.loader import render_to_string
-from django.core.mail import send_mail
-from django.utils.crypto import constant_time_compare
-from django.contrib.auth.forms import SetPasswordForm
-from django.contrib.auth.models import AbstractUser, UserManager
+from django.urls import reverse
+from django.utils import timezone
+from django.contrib.auth.models import (AbstractBaseUser, PermissionsMixin,
+                                        BaseUserManager)
+from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.utils.encoding import python_2_unicode_compatible
 
-from froide.helper.text_utils import replace_custom, replace_word
+from oauth2_provider.models import AbstractApplication
+
 from froide.helper.csv_utils import export_csv, get_dict
 
-user_activated_signal = dispatch.Signal(providing_args=[])
+
+class UserManager(BaseUserManager):
+
+    def _create_user(self, email, username, password,
+                     is_staff, is_superuser, **extra_fields):
+        """
+        Creates and saves a User with the given email and password.
+        """
+        now = timezone.now()
+        if not email:
+            raise ValueError('The given email must be set')
+        email = self.normalize_email(email)
+
+        if not username:
+            raise ValueError('The given username must be set')
+        username = self.model.normalize_username(username)
+
+        user = self.model(email=email,
+                          is_staff=is_staff, is_active=True,
+                          is_superuser=is_superuser, last_login=now,
+                          date_joined=now, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_user(self, email, username, password=None, **extra_fields):
+        return self._create_user(email, username, password, False, False,
+                                 **extra_fields)
+
+    def create_superuser(self, email, username, password=None, **extra_fields):
+        return self._create_user(email, username, password, True, True,
+                                 **extra_fields)
 
 
-class User(AbstractUser):
+@python_2_unicode_compatible
+class User(AbstractBaseUser, PermissionsMixin):
+
+    username_validator = UnicodeUsernameValidator()
+
+    username = models.CharField(
+        _('username'),
+        max_length=150,
+        unique=True,
+        help_text=_('Required. 150 characters or fewer. Letters, digits and @/./+/-/_ only.'),
+        validators=[username_validator],
+        error_messages={
+            'unique': _("A user with that username already exists."),
+        },
+    )
+    first_name = models.CharField(_('first name'), max_length=30, blank=True)
+    last_name = models.CharField(_('last name'), max_length=150, blank=True)
+    email = models.EmailField(_('email address'), unique=True, null=True,
+                              blank=True)
+    is_staff = models.BooleanField(
+        _('staff status'),
+        default=False,
+        help_text=_('Designates whether the user can log into this admin site.'),
+    )
+    is_active = models.BooleanField(
+        _('active'),
+        default=True,
+        help_text=_(
+            'Designates whether this user should be treated as active. '
+            'Unselect this instead of deleting accounts.'
+        ),
+    )
+    date_joined = models.DateTimeField(_('date joined'), default=timezone.now)
+
     organization = models.CharField(_('Organization'), blank=True, max_length=255)
     organization_url = models.URLField(_('Organization URL'), blank=True, max_length=255)
     private = models.BooleanField(_('Private'), default=False)
@@ -42,14 +101,30 @@ class User(AbstractUser):
 
     objects = UserManager()
 
-    # if settings.CUSTOM_AUTH_USER_MODEL_DB:
-    #     class Meta:
-    #         db_table = settings.CUSTOM_AUTH_USER_MODEL_DB
+    USERNAME_FIELD = 'email'
+    EMAIL_FIELD = 'email'
+    REQUIRED_FIELDS = ['username']
+
+    def __str__(self):
+        if self.email is None:
+            return self.username
+        return self.email
 
     def get_absolute_url(self):
         if self.private:
             return ""
         return reverse('account-profile', kwargs={'slug': self.username})
+
+    def get_full_name(self):
+        """
+        Returns the first_name plus the last_name, with a space in between.
+        """
+        full_name = '%s %s' % (self.first_name, self.last_name)
+        return full_name.strip()
+
+    def get_short_name(self):
+        "Returns the short name for the user."
+        return self.first_name
 
     def get_dict(self, fields):
         d = get_dict(self, fields)
@@ -70,56 +145,35 @@ class User(AbstractUser):
         )
         return export_csv(queryset, fields)
 
+    def as_json(self):
+        return json.dumps({
+            'id': self.id,
+            'first_name': self.first_name,
+            'last_name': self.last_name,
+            'address': self.address,
+            'private': self.private,
+            'email': self.email,
+            'organization': self.organization
+        })
+
     def display_name(self):
         if self.private:
-            return str(_(u"<< Name Not Public >>"))
+            return str(_("<< Name Not Public >>"))
         else:
             if self.organization:
-                return u'%s (%s)' % (self.get_full_name(), self.organization)
+                return '%s (%s)' % (self.get_full_name(), self.organization)
             else:
                 return self.get_full_name()
 
-    def apply_message_redaction(self, content, replacements=None):
-        if replacements is None:
-            replacements = {}
-
-        if self.address and replacements.get('address') is not False:
-            for line in self.address.splitlines():
-                if line.strip():
-                    content = content.replace(line,
-                            replacements.get('address',
-                                str(_("<< Address removed >>")))
-                    )
-
-        if self.email and replacements.get('email') is not False:
-            content = content.replace(self.email,
-                    replacements.get('email',
-                    str(_("<< Email removed >>")))
-            )
-
-        if not self.private or replacements.get('name') is False:
-            return content
-
-        name_replacement = replacements.get('name',
-                str(_("<< Name removed >>")))
-
-        content = replace_custom(settings.FROIDE_CONFIG['greetings'],
-                name_replacement, content)
-
-        content = replace_word(self.last_name, name_replacement, content)
-        content = replace_word(self.first_name, name_replacement, content)
-        content = replace_word(self.get_full_name(), name_replacement, content)
-
-        if self.organization:
-            content = replace_word(self.organization, name_replacement, content)
-
-        return content
-
     def get_autologin_url(self, url):
-        account_manager = AccountManager(self)
-        return account_manager.get_autologin_url(url)
+        from .services import AccountService
+
+        service = AccountService(self)
+        return service.get_autologin_url(url)
 
     def get_password_change_form(self, *args, **kwargs):
+        from django.contrib.auth.forms import SetPasswordForm
+
         return SetPasswordForm(self, *args, **kwargs)
 
     def get_change_form(self, *args, **kwargs):
@@ -127,151 +181,33 @@ class User(AbstractUser):
         return UserChangeForm(self, *args, **kwargs)
 
 
-class AccountManager(object):
-    def __init__(self, user):
-        self.user = user
+class Application(AbstractApplication):
+    description = models.TextField(blank=True)
+    homepage = models.CharField(max_length=255, blank=True)
+    image_url = models.CharField(max_length=255, blank=True)
+    auto_approve_scopes = models.TextField(blank=True)
 
-    @classmethod
-    def get_username_base(self, firstname, lastname):
-        base = u""
-        first = slugify(firstname)
-        last = slugify(lastname)
-        if first and last:
-            base = u"%s.%s" % (first[0], last)
-        elif last:
-            base = last
-        elif first:
-            base = first
-        else:
-            base = u"user"
-        base = base[:27]
-        return base
+    created = models.DateTimeField(auto_now_add=True, null=True)
+    updated = models.DateTimeField(auto_now=True, null=True)
 
-    def confirm_account(self, secret, request_id=None):
-        if not self.check_confirmation_secret(secret, request_id):
-            return False
-        self.user.is_active = True
-        self.user.save()
-        user_activated_signal.send_robust(sender=self.user)
-        return True
+    def allows_grant_type(self, *grant_types):
+        # only allow GRANT_AUTHORIZATION_CODE, GRANT_IMPLICIT
+        # regardless of application setting
+        return bool(set([
+            AbstractApplication.GRANT_AUTHORIZATION_CODE,
+            AbstractApplication.GRANT_IMPLICIT
+        ]) & set(grant_types))
 
-    def get_autologin_url(self, url):
-        return settings.SITE_URL + reverse('account-go', kwargs={"user_id": self.user.id,
-            "secret": self.generate_autologin_secret(),
-            "url": url})
+    def can_auto_approve(self, scopes):
+        """
+        Check if the token allows the provided scopes
 
-    def check_autologin_secret(self, secret):
-        return constant_time_compare(self.generate_autologin_secret(), secret)
+        :param scopes: An iterable containing the scopes to check
+        """
+        if not scopes:
+            return True
 
-    def generate_autologin_secret(self):
-        to_sign = [str(self.user.pk)]
-        if self.user.last_login:
-            to_sign.append(self.user.last_login.strftime("%Y-%m-%dT%H:%M:%S"))
-        return hmac.new(
-                settings.SECRET_KEY.encode('utf-8'),
-                (".".join(to_sign)).encode('utf-8')
-        ).hexdigest()
+        provided_scopes = set(self.auto_approve_scopes.split())
+        resource_scopes = set(scopes)
 
-    def check_confirmation_secret(self, secret, *args):
-        return constant_time_compare(
-                secret,
-                self.generate_confirmation_secret(*args)
-        )
-
-    def generate_confirmation_secret(self, *args):
-        to_sign = [str(self.user.pk), self.user.email]
-        for a in args:
-            to_sign.append(str(a))
-        if self.user.last_login:
-            to_sign.append(self.user.last_login.strftime("%Y-%m-%dT%H:%M:%S"))
-        return hmac.new(
-                settings.SECRET_KEY.encode('utf-8'),
-                (".".join(to_sign)).encode('utf-8')
-        ).hexdigest()
-
-    def send_confirmation_mail(self, request_id=None, password=None):
-        secret = self.generate_confirmation_secret(request_id)
-        url_kwargs = {"user_id": self.user.pk, "secret": secret}
-        if request_id:
-            url_kwargs['request_id'] = request_id
-        url = reverse('account-confirm', kwargs=url_kwargs)
-        message = render_to_string('account/confirmation_mail.txt',
-                {'url': settings.SITE_URL + url,
-                'password': password,
-                'name': self.user.get_full_name(),
-                'site_name': settings.SITE_NAME,
-                'site_url': settings.SITE_URL
-            })
-        # Translators: Mail subject
-        send_mail(str(_("%(site_name)s: please confirm your account") % {
-                    "site_name": settings.SITE_NAME}),
-                message, settings.DEFAULT_FROM_EMAIL, [self.user.email])
-
-    def send_email_change_mail(self, email):
-        secret = self.generate_confirmation_secret(email)
-        url_kwargs = {
-            "user_id": self.user.pk,
-            "secret": secret,
-            "email": email
-        }
-        url = '%s%s?%s' % (
-            settings.SITE_URL,
-            reverse('account-change_email'),
-            urlencode(url_kwargs)
-        )
-        message = render_to_string('account/change_email.txt',
-                {'url': url,
-                'name': self.user.get_full_name(),
-                'site_name': settings.SITE_NAME,
-                'site_url': settings.SITE_URL
-            })
-        # Translators: Mail subject
-        send_mail(str(_("%(site_name)s: please confirm your new email address") % {
-                    "site_name": settings.SITE_NAME}),
-                message, settings.DEFAULT_FROM_EMAIL, [email])
-
-    @classmethod
-    def create_user(cls, **data):
-        user = User(first_name=data['first_name'],
-                last_name=data['last_name'],
-                email=data['user_email'])
-        username_base = cls.get_username_base(user.first_name, user.last_name)
-
-        user.is_active = False
-        if "password" in data:
-            password = data['password']
-        else:
-            password = User.objects.make_random_password()
-        user.set_password(password)
-
-        user.private = data['private']
-
-        for key in ('address', 'organization', 'organization_url'):
-            setattr(user, key, data.get(key, ''))
-
-        # ensure username is unique
-        username = username_base
-        first_round = True
-        count = 0
-        postfix = ""
-        while True:
-            try:
-                with transaction.atomic():
-                    while True:
-                        if not first_round:
-                            postfix = "_%d" % count
-                        if not User.objects.filter(username=username + postfix).exists():
-                            break
-                        if first_round:
-                            first_round = False
-                            count = User.objects.filter(username__startswith=username).count()
-                        else:
-                            count += 1
-                    user.username = username + postfix
-                    user.save()
-            except IntegrityError:
-                pass
-            else:
-                break
-
-        return user, password
+        return resource_scopes.issubset(provided_scopes)

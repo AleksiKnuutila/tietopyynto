@@ -1,29 +1,41 @@
 from django.conf.urls import include, url
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.conf.urls.static import static
 from django.conf import settings
 from django.http import HttpResponseRedirect, HttpResponse
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 from django.contrib.flatpages.views import flatpage
-from django.contrib.sitemaps import Sitemap
-from django.utils.translation import ugettext as _
+from django.contrib.flatpages.sitemaps import FlatPageSitemap
+from django.contrib.sitemaps import views as sitemaps_views, Sitemap
+from django.utils.translation import pgettext
 from django.contrib import admin
 from django.contrib.sitemaps.views import sitemap
 
-from tastypie.api import Api
+from rest_framework.routers import DefaultRouter
+from rest_framework.schemas import get_schema_view
 
-from froide.publicbody.api import (PublicBodyResource,
-    JurisdictionResource, FoiLawResource)
-from froide.foirequest.api import (FoiRequestResource,
-    FoiMessageResource, FoiAttachmentResource)
+from froide.account.api_views import ProfileView
+from froide.foirequest.api_views import (FoiRequestViewSet, FoiMessageViewSet,
+    FoiAttachmentViewSet)
+from froide.publicbody.api_views import (ClassificationViewSet,
+    CategoryViewSet, PublicBodyViewSet, JurisdictionViewSet, FoiLawViewSet)
+
 from froide.publicbody.views import (PublicBodySitemap, FoiLawSitemap,
                                      JurisdictionSitemap, show_publicbody)
-from froide.foirequest.views import (index, search, dashboard, auth,
-                                     FoiRequestSitemap, shortlink,
-                                     document_upload)
+from froide.foirequest.views import (FoiRequestSitemap, document_upload)
 
-
-from django.views.generic import TemplateView
+api_router = DefaultRouter()
+api_router.register(r'request', FoiRequestViewSet, base_name='request')
+api_router.register(r'message', FoiMessageViewSet, base_name='message')
+api_router.register(r'attachment', FoiAttachmentViewSet,
+                    base_name='attachment')
+api_router.register(r'publicbody', PublicBodyViewSet, base_name='publicbody')
+api_router.register(r'category', CategoryViewSet, base_name='category')
+api_router.register(r'classification', ClassificationViewSet,
+                    base_name='classification')
+api_router.register(r'jurisdiction', JurisdictionViewSet,
+                    base_name='jurisdiction')
+api_router.register(r'law', FoiLawViewSet, base_name='law')
 
 v1_api = Api(api_name='v1')
 v1_api.register(PublicBodyResource())
@@ -32,7 +44,6 @@ v1_api.register(FoiLawResource())
 v1_api.register(FoiRequestResource())
 v1_api.register(FoiMessageResource())
 v1_api.register(FoiAttachmentResource())
-
 
 class StaticViewSitemap(Sitemap):
     priority = 1.0
@@ -44,18 +55,32 @@ class StaticViewSitemap(Sitemap):
     def location(self, item):
         return reverse(item)
 
+
 sitemaps = {
     'publicbody': PublicBodySitemap,
     'foilaw': FoiLawSitemap,
     'jurisdiction': JurisdictionSitemap,
     'foirequest': FoiRequestSitemap,
-    'content': StaticViewSitemap
+    'content': StaticViewSitemap,
+    'pages': FlatPageSitemap
 }
+
+
+PROTOCOL = settings.SITE_URL.split(':')[0]
+
+for klass in sitemaps.values():
+    klass.protocol = PROTOCOL
+
+urlpatterns = [
+    url(r'^sitemap\.xml$', sitemaps_views.index,
+        {'sitemaps': sitemaps, 'sitemap_url_name': 'sitemaps'}),
+    url(r'^sitemap-(?P<section>.+)\.xml$', sitemaps_views.sitemap,
+        {'sitemaps': sitemaps}, name='sitemaps')
+]
 
 
 SECRET_URLS = getattr(settings, "SECRET_URLS", {})
 
-urlpatterns = []
 
 if settings.FROIDE_THEME:
     urlpatterns += [
@@ -63,21 +88,28 @@ if settings.FROIDE_THEME:
     ]
 
 if settings.FROIDE_CONFIG.get('api_activated', True):
+    schema_view = get_schema_view(title='{name} API'.format(
+                                  name=settings.SITE_NAME))
     urlpatterns += [
-        url(r'^api/', include(v1_api.urls)),
+        url(r'^api/v1/user/', ProfileView.as_view(), name='api-user-profile'),
+        url(r'^api/v1/', include((api_router.urls, 'api'))),
+        url(r'^api/v1/schema/$', schema_view),
     ]
+
 
 urlpatterns += [
     # Translators: URL part
-    url(r'^$', index, name='index'),
+    url(r'^', include('froide.foirequest.urls')),
     url(r'^sitemap\.xml$', sitemap, {'sitemaps': sitemaps}),
-    url(r'^dashboard/$', dashboard, name='dashboard')
 ]
 
 if len(settings.LANGUAGES) > 1:
     urlpatterns += [
         url(r'^i18n/', include('django.conf.urls.i18n'))
     ]
+
+account = pgettext('url part', 'account')
+teams = pgettext('url part', 'teams')
 
 urlpatterns += [
     # Translators: request URL
@@ -89,37 +121,37 @@ urlpatterns += [
     # Translators: Short-request URL
     url(r"^%s/(?P<obj_id>\d+)/?$" % _('r'), shortlink, name="foirequest-shortlink"),
     # Translators: Short-request auth URL
-    url(r"^%s/(?P<obj_id>\d+)/up/(?P<code>[0-9a-f]+)/$" % _('r'), document_upload, name="foirequest-upload"),
     url(r"^%s/(?P<obj_id>\d+)/auth/(?P<code>[0-9a-f]+)/$" % _('r'), auth, name="foirequest-auth"),
     # Translators: follow request URL
-    url(r'^%s/' % _('follow'), include('froide.foirequestfollower.urls')),
+    url(r'^%s/' % pgettext('url part', 'follow'), include('froide.foirequestfollower.urls')),
     # Translators: URL part
-    url(r"^%s/(?P<slug>[-\w]+)/$" % _('entity'), show_publicbody,
+    url(r"^%s/(?P<slug>[-\w]+)/$" % pgettext('url part', 'entity'), show_publicbody,
             name="publicbody-show"),
-    url(r"^%s/$" % _('entity'), lambda request: HttpResponseRedirect(reverse('publicbody-list'))),
+    url(r"^%s/$" % pgettext('url part', 'entity'), lambda request: HttpResponseRedirect(reverse('publicbody-list'))),
     # Translators: URL part
-    url(r'^%s/' % _('entities'), include('froide.publicbody.urls')),
+    url(r'^%s/' % pgettext('url part', 'entities'), include('froide.publicbody.urls')),
     # Translators: URL part
-    url(r'^%s/' % _('law'), include('froide.publicbody.law_urls')),
+    url(r'^%s/' % pgettext('url part', 'law'), include('froide.publicbody.law_urls')),
     # Translators: URL part
-    url(r'^%s/' % _('account'), include('froide.account.urls')),
+    url(r'^%s/' % account, include('froide.account.urls')),
     # Translators: URL part
-    url(r'^%s/' % _('profile'), include('froide.account.profile_urls')),
+    url(r'^%s/%s/' % (account, teams), include('froide.team.urls')),
     # Translators: URL part
-    url(r'^%s/' % _('search'), search, name="foirequest-search"),
+    url(r'^%s/' % pgettext('url part', 'profile'), include('froide.account.profile_urls')),
+    # Translators: URL part
     url(r'^comments/', include('django_comments.urls')),
     # Secret URLs
-    url(r'^%s/' % SECRET_URLS.get('admin', 'admin'), include(admin.site.urls))
+    url(r'^%s/' % SECRET_URLS.get('admin', 'admin'), admin.site.urls)
 ]
 
 # Translators: URL part
-help_url_part = _('help')
+help_url_part = pgettext('url part', 'help')
 # Translators: URL part
-about_url_part = _('about')
+about_url_part = pgettext('url part', 'about')
 # Translators: URL part
-terms_url_part = _('terms')
+terms_url_part = pgettext('url part', 'terms')
 # Translators: URL part
-privacy_url_part = _('privacy')
+privacy_url_part = pgettext('url part', 'privacy')
 
 urlpatterns += [
     url(r'^%s/$' % help_url_part, flatpage,
@@ -149,17 +181,19 @@ if SECRET_URLS.get('postmark_bounce'):
             postmark_bounce, name="foirequest-postmark_bounce")
     ]
 
-USE_X_ACCEL_REDIRECT = getattr(settings, 'USE_X_ACCEL_REDIRECT', False)
-
-if USE_X_ACCEL_REDIRECT:
-    urlpatterns += [
-        url(r'^%s%s/' % (settings.MEDIA_URL[1:], settings.FOI_MEDIA_PATH),
-            include('froide.foirequest.media_urls'))
-    ]
 
 if settings.DEBUG:
     urlpatterns += staticfiles_urlpatterns()
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+if settings.DEBUG:
+    try:
+        import debug_toolbar
+        urlpatterns = [
+            url(r'^__debug__/', include(debug_toolbar.urls)),
+        ] + urlpatterns
+    except ImportError:
+        pass
 
 # Catch all Jurisdiction patterns
 urlpatterns += [

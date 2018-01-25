@@ -3,7 +3,7 @@
 
 {% block pre_table %}
   <div class="row">
-    <div class="col-lg-4">
+    <div class="col-lg-8">
       {% trans "Search your requests" as search_title %}
       {% include "account/_account_search.html" with title=search_title %}
       <p>
@@ -11,7 +11,7 @@
           {% blocktrans with query=view.query count request_count=page_obj.paginator.count %}
             Your search for “{{ query }}” produced one search result.
           {% plural %}
-            Your search for “{{ query }}” produced {{ request_count }} search result.
+            Your search for “{{ query }}” produced {{ request_count }} search results.
           {% endblocktrans %}
         {% else %}
           {% blocktrans count request_count=page_obj.paginator.count %}
