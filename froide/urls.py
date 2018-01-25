@@ -37,14 +37,6 @@ api_router.register(r'jurisdiction', JurisdictionViewSet,
                     base_name='jurisdiction')
 api_router.register(r'law', FoiLawViewSet, base_name='law')
 
-v1_api = Api(api_name='v1')
-v1_api.register(PublicBodyResource())
-v1_api.register(JurisdictionResource())
-v1_api.register(FoiLawResource())
-v1_api.register(FoiRequestResource())
-v1_api.register(FoiMessageResource())
-v1_api.register(FoiAttachmentResource())
-
 class StaticViewSitemap(Sitemap):
     priority = 1.0
     changefreq = 'daily'
@@ -112,16 +104,6 @@ account = pgettext('url part', 'account')
 teams = pgettext('url part', 'teams')
 
 urlpatterns += [
-    # Translators: request URL
-    url(r'^%s/' % _('make-request'), include('froide.foirequest.make_request_urls')),
-    # Translators: URL part
-    url(r'^%s/' % _('requests'), include('froide.foirequest.urls')),
-    # Translators: request URL
-    url(r'^%s/' % _('request'), include('froide.foirequest.request_urls')),
-    # Translators: Short-request URL
-    url(r"^%s/(?P<obj_id>\d+)/?$" % _('r'), shortlink, name="foirequest-shortlink"),
-    # Translators: Short-request auth URL
-    url(r"^%s/(?P<obj_id>\d+)/auth/(?P<code>[0-9a-f]+)/$" % _('r'), auth, name="foirequest-auth"),
     # Translators: follow request URL
     url(r'^%s/' % pgettext('url part', 'follow'), include('froide.foirequestfollower.urls')),
     # Translators: URL part
@@ -208,11 +190,6 @@ urlpatterns += [
 
 urlpatterns += [
     url(r'^googlef74fe3c7734be36c.html$', lambda r: HttpResponse("google-site-verification: googlef74fe3c7734be36c.html"))
-]
-
-urlpatterns += [
-    url(r'^robots\.txt$', TemplateView.as_view(template_name='robots.txt')),
-    url(r'^robotss\.txt$', TemplateView.as_view(template_name='froide/robots.txt'))
 ]
 
 

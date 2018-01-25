@@ -486,10 +486,17 @@ class PostalBaseForm(AttachmentSaverMixin, forms.Form):
         if self.cleaned_data.get('files'):
             self.save_attachments(self.files.getlist('%s-files' % self.prefix), message)
         return message
-        
-class PostalAttachmentForm(forms.Form, PostalScanMixin):
-    scan = forms.FileField(label=_("Scanned Document"),
-            help_text=PostalReplyForm.scan_help_text)
+
+class PostalAttachmentForm(AttachmentSaverMixin, forms.Form):
+    files = forms.FileField(label=_("Scanned Document"),
+            help_text=PostalBaseForm.scan_help_text,
+            validators=[validate_upload_document])
+
+    def save(self, message):
+        result = self.save_attachments(self.files.getlist('files'),
+                                               message, replace=True)
+        return result
+
 
 class OnlineAttachmentForm(forms.Form):
     sender_name = forms.CharField(

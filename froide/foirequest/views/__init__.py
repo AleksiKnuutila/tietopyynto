@@ -11,7 +11,7 @@ from .message import (
 )
 from .misc_views import (
     index, dashboard, postmark_inbound, postmark_bounce, download_foirequest,
-    FoiRequestSitemap
+    FoiRequestSitemap, document_upload
 )
 from .project import (
     ProjectView, project_shortlink, SetProjectTeamView
